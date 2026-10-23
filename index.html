@@ -292,6 +292,7 @@ button.store:hover{background:var(--soft)}
 .choice:disabled{opacity:.55;cursor:not-allowed}
 .choice:first-child:not(:disabled):not(.on){border-color:color-mix(in srgb,var(--ink) 45%,var(--line))}
 button.store{white-space:nowrap;max-width:none}
+.tname{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tname h2{margin:2px 0 4px}.tname .btn{padding:4px 10px;font-size:.85rem}
 </style>
 </head>
 <body>
@@ -361,7 +362,7 @@ const fmtM = m => m==null||isNaN(m) ? "—" : Math.round(m).toLocaleString("fr-F
 const natKey = k => { const m = k.match(/(\d+)\s*([A-Z]?)/i); return m ? (+m[1])*100 + (m[2] ? m[2].toUpperCase().charCodeAt(0)-64 : 0) : 99999; };
 const keyId = k => k.replace(/\s+/g,"-");
 let toastT;
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, 3600); }
+function toast(msg,ms){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, ms||3600); }
 function hav(a,b){ const R=6371000, r=Math.PI/180, dLa=(b[0]-a[0])*r, dLo=(b[1]-a[1])*r; const h=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
 function decodePoly(str, prec){ const f=Math.pow(10,prec); const lines=[]; for(const s of str.split(" ")){ if(!s) continue; let i=0,lat=0,lng=0; const pts=[]; while(i<s.length){ let b,sh=0,r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lat+= (r&1)?~(r>>1):(r>>1); sh=0;r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lng+= (r&1)?~(r>>1):(r>>1); pts.push([lat/f,lng/f]); } lines.push(pts); } return lines; }
 function encodePoly(lines, prec){ const f=Math.pow(10,prec); const e=v=>{ v=v<0?~(v<<1):(v<<1); let o=""; while(v>=0x20){ o+=String.fromCharCode((0x20|(v&0x1f))+63); v>>=5; } return o+String.fromCharCode(v+63); }; return lines.map(l=>{ let pa=0,po=0,o=""; for(const [a,b] of l){ const ia=Math.round(a*f), ib=Math.round(b*f); o+=e(ia-pa)+e(ib-po); pa=ia; po=ib; } return o; }).join(" "); }
@@ -398,7 +399,8 @@ function S(){ return STYLES[curStyleKey()]; }
    photos/ (JPEG) et traces/ (GPX). Chaque appareil fusionne champ par champ ce qu'il trouve
    sur le Drive : le plus récent l'emporte. */
 const CFG = Object.assign({ googleClientId:"" }, window.CARNET_CONFIG||{});
-const ROOT = "Mes GR", DATAF = "_carnet (ne pas modifier)";
+const ROOT = "Mes GR", DATAF = "_carnet (ne pas modifier)", FOLDER = "application/vnd.google-apps.folder";
+const DATA_SPEC = { "aperçus":{key:"data/aperçus",name:"aperçus",in:"data"}, traces:{key:"data/traces",name:"traces",in:"data"} };
 const DRIVE = "https://www.googleapis.com/drive/v3/files", UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const state = { grs:{}, tracks:{}, mode:"local", readOnly:false };
 let doc = { v:2, grs:{}, tracks:{}, prefs:null, pu:0, files:{} };
@@ -453,8 +455,8 @@ const Store = {
   },
   async remove(coll,id){ const now=Date.now(); doc[coll][id]={deleted:true,u:now,_t:{deleted:now}}; this.derive(); this.touch(); },
   async savePrefs(){ try{ localStorage.setItem("carnet-gr-prefs",JSON.stringify(prefs)); }catch(e){} doc.prefs={...prefs}; doc.pu=Date.now(); this.touch(); },
-  async putBlob(blob,type,dest){ // dest : { path:["photos","GR 20 – …"], name:"IMG_1234.jpg", drop:true } (drop = ne pas garder de copie locale une fois envoyé)
-    const id=(dest?.drop?"o_":type==="image/jpeg"?"p_":"g_")+uid();
+  async putBlob(blob,type,dest,forceId){ // dest : { path:["GR 20 – …"], name:"IMG_1234.jpg", drop:true } (drop = ne pas garder de copie locale une fois envoyé)
+    const id=forceId||((dest?.drop?"o_":type==="image/jpeg"?"p_":"g_")+uid());
     await this.idbPut("blobs",id,blob); await this.idbPut("pending",id,{type:type||blob.type||"application/octet-stream",...(dest||{})}); doc.files[id]=""; this.pending++; this.touch(); return id;
   },
   async delBlob(id){ if(!id) return; const fid=doc.files[id];
@@ -479,24 +481,42 @@ const Store = {
         error_callback:e=>rej(new Error(e?.type==="popup_closed"?"Fenêtre Google fermée.":e?.type==="popup_failed_to_open"?"La fenêtre Google a été bloquée : autorise les fenêtres pour ce site.":"Connexion annulée.")) });
       tc.requestAccessToken({ prompt: pick ? "select_account consent" : "" });
     }); },
-  disconnect(){ this.who=""; try{ localStorage.removeItem("carnet-who"); }catch(e){} try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
+  disconnect(){ this.who=""; this.paths={}; try{ localStorage.removeItem("carnet-who"); }catch(e){} try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
   async api(method,url,body,headers){ const r=await fetch(url,{method,body,headers:{Authorization:"Bearer "+this.token,...(headers||{})}});
     if(!r.ok){ const e=new Error(r.status===401?"Session Google expirée":r.status===403?"Accès refusé par Google ("+r.status+")":"Erreur Google Drive ("+r.status+")"); e.status=r.status; if(r.status===401){ this.token=null; this.tokenExp=0; } throw e; } return r; },
   async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime,mimeType)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
-  async mkdir(name,parent){ const r=await this.api("POST",`${DRIVE}?fields=id`,JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})}),{"Content-Type":"application/json"}); return (await r.json()).id; },
+  async mkdir(name,parent,tag){ const r=await this.api("POST",`${DRIVE}?fields=id`,JSON.stringify({name,mimeType:FOLDER,...(parent?{parents:[parent]}:{}),...(tag?{appProperties:{cg:tag}}:{})}),{"Content-Type":"application/json"}); return (await r.json()).id; },
+  qs(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); },
   async upload(name,parent,blob){ const fd=new FormData(); fd.append("metadata",new Blob([JSON.stringify({name,parents:[parent]})],{type:"application/json"})); fd.append("file",blob,name);
     const r=await this.api("POST",`${UPLOAD}?uploadType=multipart&fields=id,version`,fd); return r.json(); },
-  async folders(){ if(this.folder) return;
-    const F="mimeType='application/vnd.google-apps.folder' and trashed=false";
-    const root=(await this.list(`${F} and name='${ROOT}' and 'root' in parents`))[0];
-    this.folder=root?root.id:await this.mkdir(ROOT); this.paths={};
-    this.dataFolder=await this.ensurePath([DATAF]); },
-  async ensurePath(path){ let parent=this.folder, key="";
-    for(const seg of path){ key+="/"+seg; if(this.paths[key]){ parent=this.paths[key]; continue; }
-      const q=seg.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
-      const f=(await this.list(`mimeType='application/vnd.google-apps.folder' and trashed=false and name='${q}' and '${parent}' in parents`))[0];
-      parent=this.paths[key]=f?f.id:await this.mkdir(seg,parent); }
-    return parent; },
+  /* Les dossiers sont repérés par une étiquette invisible (appProperties) : tu peux les renommer ou
+     déplacer « Mes GR » dans ton Drive, l'appli les retrouve quand même. */
+  folders(){ if(this.folder) return Promise.resolve();
+    return this._fp || (this._fp=(async()=>{ try{
+      const F=`mimeType='${FOLDER}' and trashed=false`;
+      let root=(await this.list(`${F} and appProperties has { key='cg' and value='root' }`))[0];
+      if(!root){ root=(await this.list(`${F} and name='${ROOT}' and 'root' in parents`))[0]; if(root) await this.tag(root.id,"root"); }
+      const rid=root?root.id:await this.mkdir(ROOT,null,"root"); this.paths={}; this.folder=rid;
+      this.dataFolder=await this.folderFor({key:"data",name:DATAF}); } finally{ this._fp=null; } })()); },
+  async tag(fid,key){ try{ await this.api("PATCH",`${DRIVE}/${fid}`,JSON.stringify({appProperties:{cg:key}}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } },
+  folderFor(spec){ const k=spec.key;
+    if(!this.paths[k]) this.paths[k]=(async()=>{ const par=spec.in==="data"?this.dataFolder:this.folder; const F=`mimeType='${FOLDER}' and trashed=false and '${par}' in parents`;
+      let f=(await this.list(`${F} and appProperties has { key='cg' and value='${this.qs(k)}' }`))[0];
+      if(!f){ f=(await this.list(`${F} and name='${this.qs(spec.name)}'`))[0]; if(f) await this.tag(f.id,k); }
+      return f?f.id:await this.mkdir(spec.name,par,k); })();
+    return this.paths[k].catch(e=>{ delete this.paths[k]; throw e; }); },
+  async renameFolder(key,name){ const rn=(await this.idbGet("kv","renames"))||{}; rn[key]=name; await this.idbPut("kv","renames",rn); this.schedule(); },
+  async applyRenames(){ const rn=(await this.idbGet("kv","renames"))||{}; const keys=Object.keys(rn); if(!keys.length) return;
+    for(const k of keys){ const f=(await this.list(`mimeType='${FOLDER}' and trashed=false and appProperties has { key='cg' and value='${this.qs(k)}' }`))[0];
+      if(f&&f.name!==rn[k]){ try{ await this.api("PATCH",`${DRIVE}/${f.id}`,JSON.stringify({name:rn[k]}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } } }
+    await this.idbPut("kv","renames",{}); },
+  async putOriginal(file,spec){ // envoie l'original tout de suite si le Drive est joignable
+    const id="o_"+uid();
+    if(state.mode==="drive"&&this.hasToken()&&navigator.onLine){
+      try{ await this.folders(); const parent=await this.folderFor(spec); const r=await this.uploadAny(file.name,parent,file,file.type||"image/jpeg");
+        doc.files[id]=r.id; this.touch(); return {id,sent:true}; }catch(e){ if(e.status===401){ this.token=null; this.tokenExp=0; } } }
+    const blob=new Blob([await file.arrayBuffer()],{type:file.type||"image/jpeg"}); // copie en mémoire (plus fiable que le fichier lui-même sur iPhone)
+    await this.putBlob(blob,blob.type,{fspec:spec,name:file.name,drop:true},id); return {id,sent:false}; },
   async uploadAny(name,parent,blob,type){ if(blob.size<4.5e6) return this.upload(name,parent,blob);
     let loc=null;
     try{ const r=await this.api("POST",`${UPLOAD}?uploadType=resumable&fields=id,version`,JSON.stringify({name,parents:[parent]}),{"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":type||blob.type||"application/octet-stream"}); loc=r.headers.get("Location"); }
@@ -506,23 +526,23 @@ const Store = {
     if(!r2.ok){ const e=new Error("envoi interrompu ("+r2.status+")"); e.status=r2.status; throw e; } return r2.json(); },
   async migrateLegacy(lg){ // range les fichiers de l'ancien dossier « Carnet des GR » dans « Mes GR »
     const folderOf={}; const mark=(photos,f)=>{ for(const ph of photos||[]) if(ph.o) folderOf[ph.o]=f; };
-    for(const [k,r] of Object.entries(doc.grs)){ const g=GRS.find(x=>keyId(x.key)===k); if(g) mark(r.photos,grFolder(g)); }
-    for(const t of Object.values(doc.tracks)) if(t&&!t.deleted) mark(t.photos, t.gr&&GRBY[t.gr]?grFolder(GRBY[t.gr]):safeName("Traces – "+t.name));
+    for(const [k,r] of Object.entries(doc.grs)){ const g=GRS.find(x=>keyId(x.key)===k); if(g) mark(r.photos,grSpec(g)); }
+    for(const [id,t] of Object.entries(doc.tracks)) if(t&&!t.deleted) mark(t.photos, trSpec(id,t));
     for(const [id,fid] of Object.entries(doc.files)){ if(!fid||fid==="x") continue;
-      const path = id.startsWith("o_") ? [folderOf[id]||"Photos"] : [DATAF, id.startsWith("g_")?"traces":"aperçus"];
-      try{ const r=await this.api("GET",`${DRIVE}/${fid}?fields=parents`); const par=(await r.json()).parents||[]; const dest=await this.ensurePath(path);
+      const spec = id.startsWith("o_") ? (folderOf[id]||{key:"n:Photos",name:"Photos"}) : DATA_SPEC[id.startsWith("g_")?"traces":"aperçus"];
+      try{ const r=await this.api("GET",`${DRIVE}/${fid}?fields=parents`); const par=(await r.json()).parents||[]; const dest=await this.folderFor(spec);
         if(par.includes(dest)) continue;
         await this.api("PATCH",`${DRIVE}/${fid}?addParents=${dest}&removeParents=${par.join(",")}&fields=id`,JSON.stringify({}),{"Content-Type":"application/json"});
       }catch(e){ if(e.status===401) throw e; } }
     const trash=async id=>{ try{ await this.api("PATCH",`${DRIVE}/${id}`,JSON.stringify({trashed:true}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } };
     await trash(lg.file);
     // l'ancien dossier n'est mis à la corbeille que s'il ne contient plus aucun fichier
-    const hasFiles=async(fid,depth)=>{ const kids=await this.list(`'${fid}' in parents and trashed=false`); for(const k of kids){ if(!k.mimeType||k.mimeType!=="application/vnd.google-apps.folder") return true; if(depth<4&&await hasFiles(k.id,depth+1)) return true; } return false; };
+    const hasFiles=async(fid,depth)=>{ const kids=await this.list(`'${fid}' in parents and trashed=false`); for(const k of kids){ if(!k.mimeType||k.mimeType!==FOLDER) return true; if(depth<4&&await hasFiles(k.id,depth+1)) return true; } return false; };
     try{ if(!(await hasFiles(lg.root,0))) await trash(lg.root); }catch(e){ if(e.status===401) throw e; }
   },
-  destOf(id,p){ const img=p.type==="image/jpeg"&&!p.drop; let path=p.path;
-    if(path&&path[0]==="photos"&&path.length>1) path=path.slice(1); // ancienne version
-    return path||[DATAF, img?"aperçus":"traces"]; },
+  destOf(id,p){ if(p.fspec) return p.fspec;
+    if(p.path){ let path=p.path; if(path[0]==="photos"&&path.length>1) path=path.slice(1); const name=path[path.length-1]; return {key:"n:"+name,name}; } // anciennes versions
+    return DATA_SPEC[p.type==="image/jpeg"?"aperçus":"traces"]; },
   schedule(){ clearTimeout(this._st); this._st=setTimeout(()=>this.sync(),2500); renderStoreBadge(); },
   async sync(force){
     if(state.mode!=="drive"||this.syncing){ renderStoreBadge(); return; }
@@ -530,6 +550,7 @@ const Store = {
     this.syncing=true; renderStoreBadge();
     try{
       await this.folders();
+      await this.applyRenames();
       if(!this.who){ try{ const r=await this.api("GET","https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)"); const u=(await r.json()).user||{}; this.who=u.emailAddress||u.displayName||""; try{ localStorage.setItem("carnet-who",this.who); }catch(e){} }catch(e){ if(e.status===401) throw e; } }
       // 1. photos et GPX en attente d'envoi
       const pend=await this.idbAll("pending");
@@ -537,7 +558,7 @@ const Store = {
       this.pending=ordered.length;
       for(const [id,p] of ordered){ const blob=await this.idbGet("blobs",id);
         if(!blob||doc.files[id]==="x"){ await this.idbDel("pending",id); this.pending=Math.max(0,this.pending-1); continue; }
-        try{ const parent=await this.ensurePath(this.destOf(id,p));
+        try{ const parent=await this.folderFor(this.destOf(id,p));
           const r=await this.uploadAny(p.name||(id+(p.type==="image/jpeg"?".jpg":".gpx")), parent, blob, p.type);
           doc.files[id]=r.id; this.dirty=true; await this.idbDel("pending",id); if(p.drop){ await this.idbDel("blobs",id); this.urlCache.delete(id); }
           this.pending=Math.max(0,this.pending-1); this.persist(); renderStoreBadge();
@@ -836,12 +857,12 @@ function renderDetail(){
     if(s==="partial") bindPartsEditor(g);
     const date=$("#fDate"); if(date) date.onchange=()=>Store.save("grs",keyId(g.key),{...grRec(g.key),date:date.value});
     bindNotes(()=>Store.save("grs",keyId(g.key),{...grRec(g.key),notes:$("#fNotes").value}));
-    bindPhotos(photos, async (newList)=>{ await Store.save("grs",keyId(g.key),{...grRec(g.key),photos:newList, status: grRec(g.key).status||"partial"}); }, grFolder(g));
+    bindPhotos(photos, async (newList)=>{ await Store.save("grs",keyId(g.key),{...grRec(g.key),photos:newList, status: grRec(g.key).status||"partial"}); }, grSpec(g));
     showPhotoMarkers(photos);
   } else {
     const id=selected.key, t=state.tracks[id]; if(!t) return closeDetail(); const photos=t.photos||[];
     el.innerHTML=`<button class="back" id="back">← Mes traces</button>
-    <div class="dh"><div class="ref">TRACE GPX${t.file?" · "+esc(t.file):""}</div><h2 style="font-size:1.7rem">${esc(t.name)}</h2>${t.date?`<p>${new Date(t.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</p>`:""}</div>
+    <div class="dh"><div class="ref">TRACE GPX${t.file?" · "+esc(t.file):""}</div><div class="tname"><h2 style="font-size:1.7rem">${esc(t.name)}</h2>${ro?"":`<button class="btn" id="renTr" type="button">Renommer</button>`}</div>${t.date?`<p>${new Date(t.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</p>`:""}</div>
     <div class="kv"><div><div class="l">Distance</div><div class="v">${fmtKm(t.dist||0)}</div></div><div><div class="l">Dénivelé +</div><div class="v">${fmtM(t.up)}</div></div><div><div class="l">Dénivelé −</div><div class="v">${fmtM(t.dn)}</div></div><div><div class="l">Point haut</div><div class="v">${fmtM(t.max)}</div></div><div><div class="l">Point bas</div><div class="v">${fmtM(t.min)}</div></div><div><div class="l">Points</div><div class="v">${(t.n||0).toLocaleString("fr-FR")}</div></div></div>
     ${profileSvg(t.prof,t.dist||0)}
     ${t.up==null?'<div class="note">Ce fichier ne contient pas d\'altitudes : le dénivelé ne peut pas être calculé.</div>':""}
@@ -852,12 +873,13 @@ function renderDetail(){
     ${photoSection(photos)}
     ${ro?"":`<div class="confirm" id="delZone"><button class="btn danger" id="delTr">Supprimer cette trace</button></div>`}`;
     const upd=patch=>Store.save("tracks",id,{...state.tracks[id],...patch}).then(()=>{ styleTrack(id); renderList(); stats(); });
-    const nm=$("#fName"); if(nm) nm.onchange=()=>upd({name:nm.value.trim()||t.name});
+    const nm=$("#fName"); if(nm) nm.onchange=()=>upd({name:nm.value.trim()||t.name}).then(()=>{ const nt=state.tracks[id]; if(!nt.gr&&(nt.photos||[]).length) Store.renameFolder("tr:"+id, safeName("Traces – "+nt.name)); toast((nt.photos||[]).length&&!nt.gr?"Trace renommée (son dossier dans le Drive aussi)":"Trace renommée"); renderDetail(); });
+    $("#renTr")&&($("#renTr").onclick=()=>{ const n=$("#fName"); n.scrollIntoView({block:"center",behavior:"smooth"}); n.focus(); n.select(); });
     $("#tSw")?.addEventListener("click",e=>{ const b=e.target.closest("[data-c]"); if(b){ upd({color:b.dataset.c}).then(renderDetail); } });
     const tc=$("#tCol"); if(tc) tc.onchange=()=>upd({color:tc.value}).then(renderDetail);
     const fg=$("#fGr"); if(fg) fg.onchange=async()=>{ await upd({gr:fg.value||null}); if(fg.value && grStatus(fg.value)!=="done"){ const ok=await addTrackPart(id,fg.value,true); if(ok) toast(`Portion ajoutée au ${fg.value}`); else if(grStatus(fg.value)==="todo"){ await setStatus(fg.value,"partial"); toast(`${fg.value} marqué « en partie »`); } } };
     bindNotes(()=>upd({notes:$("#fNotes").value}));
-    bindPhotos(photos, async newList=>{ await upd({photos:newList}); }, t.gr&&GRBY[t.gr] ? grFolder(GRBY[t.gr]) : safeName("Traces – "+t.name));
+    bindPhotos(photos, async newList=>{ await upd({photos:newList}); }, trSpec(id,t));
     const del=$("#delTr"); if(del) del.onclick=()=>{ $("#delZone").innerHTML=`<span>Supprimer « ${esc(t.name)} » et ses ${photos.length} photo(s) ?</span><button class="btn danger" id="delYes">Supprimer</button><button class="btn" id="delNo">Annuler</button>`; $("#delNo").onclick=renderDetail; $("#delYes").onclick=async()=>{ for(const p of photos){ await Store.delBlob(p.id); await Store.delBlob(p.t); await Store.delBlob(p.o); } await Store.delBlob(t.gpx); await Store.remove("tracks",id); syncTrackLayers(); closeDetail(); stats(); toast("Trace supprimée"); }; };
     showPhotoMarkers(photos);
   }
@@ -890,22 +912,37 @@ function readExif(buf){ // GPS + date de prise de vue (JPEG)
   }catch(e){} return {}; }
 function safeName(s){ return String(s).replace(/[\\/:*?"<>|\u0000-\u001f]/g,"-").replace(/\s+/g," ").trim().slice(0,120)||"Photos"; }
 function grFolder(g){ return safeName(g.key+(g.name?" – "+g.name:"")); }
+function grSpec(g){ return {key:"gr:"+keyId(g.key), name:grFolder(g)}; }
+function trSpec(id,t){ return t.gr&&GRBY[t.gr] ? grSpec(GRBY[t.gr]) : {key:"tr:"+id, name:safeName("Traces – "+t.name)}; }
 async function addPhotos(files){
   if(!photoTarget||state.readOnly) return; files=files.filter(f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)); if(!files.length) return;
-  const {commit,folder}=photoTarget; let list=[...photoTarget.photos]; let ok=0, noPrev=0;
-  toast(`Ajout de ${files.length} photo${files.length>1?"s":""}…`);
-  for(const f of files){
-    try{ const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.arrayBuffer()) : {};
-      const o=await Store.putBlob(f, f.type||"image/jpeg", {path:[folder||"Photos"], name:f.name, drop:true});
-      let rec={o,name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
-      try{ const big=await resizeImage(f,1800,0.85), th=await resizeImage(f,480,0.8);
+  const {commit,folder}=photoTarget; let list=[...photoTarget.photos]; let ok=0, noPrev=0, sent=0, kept=0; const fails=[];
+  try{ navigator.storage?.persist?.(); }catch(e){}
+  const n=files.length;
+  let dup=0;
+  for(let i=0;i<n;i++){ const f=files[i];
+    if(list.some(p=>p.name===f.name&&p.size===f.size)){ dup++; continue; } // déjà dans ce GR
+    toast(`Photo ${i+1} / ${n}…`);
+    try{ const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.slice(0,262144).arrayBuffer()) : {};
+      let rec={name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
+      // 1. aperçus légers (gardés sur l'appareil)
+      try{ const big=await resizeImage(f,1600,0.82), th=await resizeImage(f,400,0.78);
         rec={...rec, id:await Store.putBlob(big.blob,"image/jpeg"), t:await Store.putBlob(th.blob,"image/jpeg"), w:big.w, h:big.h};
-      }catch(e){ noPrev++; }
+      }catch(e){ if(e?.name==="QuotaExceededError") throw e; noPrev++; }
+      // 2. original : envoyé directement au Drive si possible, sinon gardé en attente sur l'appareil
+      const r=await Store.putOriginal(f, folder||{key:"n:Photos",name:"Photos"}); rec.o=r.id; if(r.sent) sent++; else kept++;
       list.push(rec); ok++;
-    }catch(e){ toast(`${f.name} : ajout impossible`); }
+      if(ok%5===0) await commit(list);
+    }catch(e){ fails.push(f.name+(e?.name==="QuotaExceededError"?" (mémoire de l'appareil pleine)":"")); }
   }
   photoTarget.photos=list; await commit(list); renderDetail();
-  toast(`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}${state.mode==="drive"?` · originaux rangés dans « Mes GR / ${folder} »`:""}${noPrev?` (${noPrev} sans aperçu : format non lisible par le navigateur, l'original est gardé)`:""}`);
+  let msg=ok?`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}`:"Aucune nouvelle photo";
+  if(sent) msg+=` · ${sent>1?sent+" originaux rangés":"original rangé"} dans « Mes GR / ${folder?.name||"Photos"} »`;
+  if(kept) msg+= state.mode==="drive" ? ` · ${kept>1?kept+" originaux":"original"} en attente d'envoi (dès que le Drive sera joignable)` : (kept>1?` · ${kept} originaux gardés sur cet appareil`:" · original gardé sur cet appareil");
+  if(noPrev) msg+=` · ${noPrev} sans aperçu (format non lisible par ce navigateur, l'original est gardé)`;
+  if(dup) msg+=` · ${dup} déjà présente${dup>1?"s":""}, ignorée${dup>1?"s":""}`;
+  if(fails.length) msg+=` · ${fails.length} échec${fails.length>1?"s":""} : ${fails.slice(0,3).join(", ")}${fails.length>3?"…":""}`;
+  toast(msg, fails.length||dup||kept ? 8000 : 4500);
 }
 let lb=null;
 async function openLightbox(photos,i,commit){ lb={photos,i,commit:commit||photoTarget?.commit}; await renderLightbox(); }
