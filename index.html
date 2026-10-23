@@ -1076,7 +1076,7 @@ function renderWelcome(){
     </div>
     <input type="file" id="wImpF" accept=".json,application/json" hidden>
     ${cid?`<p class="note">Avec Google Drive, l'appli ne voit que les fichiers qu'elle crée elle-même, dans le dossier « Carnet des GR ». Si Google affiche « Cette application n'a pas été validée », clique sur « Paramètres avancés » puis sur « Accéder à Carnet des GR ».</p>`:""}
-    <p class="note">Tu pourras changer d'avis à tout moment avec le bouton en haut du carnet. Ce bouton « ? » réaffiche cette explication.</p>
+    <p class="note">Tu pourras changer d'avis à tout moment avec le bouton en haut du carnet. Ce bouton « ? » réaffiche cette explication. <a href="confidentialite.html" target="_blank" rel="noopener">Confidentialité</a></p>
   </div>`;
   $("#wX")&&($("#wX").onclick=()=>openWelcome(false));
   $("#wDrive").onclick=async()=>{ if(on){ setWelcome("drive"); openWelcome(false); return; } try{ await Store.connect(true); setWelcome("drive"); openWelcome(false); toast("Google Drive connecté : ton carnet y sera enregistré."); renderStoreBadge(); await Store.sync(true); }catch(e){ toast(e.message); } };
