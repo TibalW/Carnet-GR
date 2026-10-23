@@ -393,10 +393,12 @@ function S(){ return STYLES[curStyleKey()]; }
 
 /* ===================== Stockage : cet appareil + Google Drive ===================== */
 /* Tout est d'abord enregistré dans le navigateur (IndexedDB), puis recopié dans le dossier
-   « Carnet des GR » du Google Drive choisi : carnet.json (statuts, notes, portions, traces…),
+   « Mes GR » du Google Drive choisi : un sous-dossier par GR avec les photos originales, et
+   « _carnet (ne pas modifier) » avec carnet.json (statuts, notes, portions…), les aperçus et les GPX.
    photos/ (JPEG) et traces/ (GPX). Chaque appareil fusionne champ par champ ce qu'il trouve
    sur le Drive : le plus récent l'emporte. */
 const CFG = Object.assign({ googleClientId:"" }, window.CARNET_CONFIG||{});
+const ROOT = "Mes GR", DATAF = "_carnet (ne pas modifier)";
 const DRIVE = "https://www.googleapis.com/drive/v3/files", UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const state = { grs:{}, tracks:{}, mode:"local", readOnly:false };
 let doc = { v:2, grs:{}, tracks:{}, prefs:null, pu:0, files:{} };
@@ -480,13 +482,15 @@ const Store = {
   disconnect(){ this.who=""; try{ localStorage.removeItem("carnet-who"); }catch(e){} try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
   async api(method,url,body,headers){ const r=await fetch(url,{method,body,headers:{Authorization:"Bearer "+this.token,...(headers||{})}});
     if(!r.ok){ const e=new Error(r.status===401?"Session Google expirée":r.status===403?"Accès refusé par Google ("+r.status+")":"Erreur Google Drive ("+r.status+")"); e.status=r.status; if(r.status===401){ this.token=null; this.tokenExp=0; } throw e; } return r; },
-  async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
+  async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime,mimeType)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
   async mkdir(name,parent){ const r=await this.api("POST",`${DRIVE}?fields=id`,JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})}),{"Content-Type":"application/json"}); return (await r.json()).id; },
   async upload(name,parent,blob){ const fd=new FormData(); fd.append("metadata",new Blob([JSON.stringify({name,parents:[parent]})],{type:"application/json"})); fd.append("file",blob,name);
     const r=await this.api("POST",`${UPLOAD}?uploadType=multipart&fields=id,version`,fd); return r.json(); },
   async folders(){ if(this.folder) return;
-    const root=(await this.list(`mimeType='application/vnd.google-apps.folder' and trashed=false and name='Carnet des GR' and 'root' in parents`))[0];
-    this.folder=root?root.id:await this.mkdir("Carnet des GR"); this.paths={}; },
+    const F="mimeType='application/vnd.google-apps.folder' and trashed=false";
+    const root=(await this.list(`${F} and name='${ROOT}' and 'root' in parents`))[0];
+    this.folder=root?root.id:await this.mkdir(ROOT); this.paths={};
+    this.dataFolder=await this.ensurePath([DATAF]); },
   async ensurePath(path){ let parent=this.folder, key="";
     for(const seg of path){ key+="/"+seg; if(this.paths[key]){ parent=this.paths[key]; continue; }
       const q=seg.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
@@ -494,10 +498,31 @@ const Store = {
       parent=this.paths[key]=f?f.id:await this.mkdir(seg,parent); }
     return parent; },
   async uploadAny(name,parent,blob,type){ if(blob.size<4.5e6) return this.upload(name,parent,blob);
-    const r=await this.api("POST",`${UPLOAD}?uploadType=resumable&fields=id,version`,JSON.stringify({name,parents:[parent]}),{"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":type||blob.type||"application/octet-stream","X-Upload-Content-Length":String(blob.size)});
-    const loc=r.headers.get("Location"); if(!loc) throw new Error("Envoi impossible vers le Drive");
+    let loc=null;
+    try{ const r=await this.api("POST",`${UPLOAD}?uploadType=resumable&fields=id,version`,JSON.stringify({name,parents:[parent]}),{"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":type||blob.type||"application/octet-stream"}); loc=r.headers.get("Location"); }
+    catch(e){ if(e.status===401) throw e; }
+    if(!loc) return this.upload(name,parent,blob); // repli : envoi en une fois
     const r2=await fetch(loc,{method:"PUT",body:blob,headers:{"Content-Type":type||blob.type||"application/octet-stream"}});
-    if(!r2.ok){ const e=new Error("Envoi interrompu ("+r2.status+")"); e.status=r2.status; throw e; } return r2.json(); },
+    if(!r2.ok){ const e=new Error("envoi interrompu ("+r2.status+")"); e.status=r2.status; throw e; } return r2.json(); },
+  async migrateLegacy(lg){ // range les fichiers de l'ancien dossier « Carnet des GR » dans « Mes GR »
+    const folderOf={}; const mark=(photos,f)=>{ for(const ph of photos||[]) if(ph.o) folderOf[ph.o]=f; };
+    for(const [k,r] of Object.entries(doc.grs)){ const g=GRS.find(x=>keyId(x.key)===k); if(g) mark(r.photos,grFolder(g)); }
+    for(const t of Object.values(doc.tracks)) if(t&&!t.deleted) mark(t.photos, t.gr&&GRBY[t.gr]?grFolder(GRBY[t.gr]):safeName("Traces – "+t.name));
+    for(const [id,fid] of Object.entries(doc.files)){ if(!fid||fid==="x") continue;
+      const path = id.startsWith("o_") ? [folderOf[id]||"Photos"] : [DATAF, id.startsWith("g_")?"traces":"aperçus"];
+      try{ const r=await this.api("GET",`${DRIVE}/${fid}?fields=parents`); const par=(await r.json()).parents||[]; const dest=await this.ensurePath(path);
+        if(par.includes(dest)) continue;
+        await this.api("PATCH",`${DRIVE}/${fid}?addParents=${dest}&removeParents=${par.join(",")}&fields=id`,JSON.stringify({}),{"Content-Type":"application/json"});
+      }catch(e){ if(e.status===401) throw e; } }
+    const trash=async id=>{ try{ await this.api("PATCH",`${DRIVE}/${id}`,JSON.stringify({trashed:true}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } };
+    await trash(lg.file);
+    // l'ancien dossier n'est mis à la corbeille que s'il ne contient plus aucun fichier
+    const hasFiles=async(fid,depth)=>{ const kids=await this.list(`'${fid}' in parents and trashed=false`); for(const k of kids){ if(!k.mimeType||k.mimeType!=="application/vnd.google-apps.folder") return true; if(depth<4&&await hasFiles(k.id,depth+1)) return true; } return false; };
+    try{ if(!(await hasFiles(lg.root,0))) await trash(lg.root); }catch(e){ if(e.status===401) throw e; }
+  },
+  destOf(id,p){ const img=p.type==="image/jpeg"&&!p.drop; let path=p.path;
+    if(path&&path[0]==="photos"&&path.length>1) path=path.slice(1); // ancienne version
+    return path||[DATAF, img?"aperçus":"traces"]; },
   schedule(){ clearTimeout(this._st); this._st=setTimeout(()=>this.sync(),2500); renderStoreBadge(); },
   async sync(force){
     if(state.mode!=="drive"||this.syncing){ renderStoreBadge(); return; }
@@ -508,26 +533,35 @@ const Store = {
       if(!this.who){ try{ const r=await this.api("GET","https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)"); const u=(await r.json()).user||{}; this.who=u.emailAddress||u.displayName||""; try{ localStorage.setItem("carnet-who",this.who); }catch(e){} }catch(e){ if(e.status===401) throw e; } }
       // 1. photos et GPX en attente d'envoi
       const pend=await this.idbAll("pending");
-      for(const [id,p] of Object.entries(pend)){ const blob=await this.idbGet("blobs",id);
-        if(!blob||doc.files[id]==="x"){ await this.idbDel("pending",id); continue; }
-        const img=p.type==="image/jpeg"; const parent=await this.ensurePath(p.path||[img?"aperçus":"traces"]);
-        const r=await this.uploadAny(p.name||(id+(img?".jpg":".gpx")), parent, blob, p.type);
-        doc.files[id]=r.id; this.dirty=true; await this.idbDel("pending",id); if(p.drop){ await this.idbDel("blobs",id); this.urlCache.delete(id); }
-        this.pending=Math.max(0,this.pending-1); this.persist(); renderStoreBadge(); }
+      const ferr=[]; const ordered=Object.entries(pend).sort((a,b)=>(a[1].drop?1:0)-(b[1].drop?1:0)); // aperçus d'abord, originaux ensuite
+      this.pending=ordered.length;
+      for(const [id,p] of ordered){ const blob=await this.idbGet("blobs",id);
+        if(!blob||doc.files[id]==="x"){ await this.idbDel("pending",id); this.pending=Math.max(0,this.pending-1); continue; }
+        try{ const parent=await this.ensurePath(this.destOf(id,p));
+          const r=await this.uploadAny(p.name||(id+(p.type==="image/jpeg"?".jpg":".gpx")), parent, blob, p.type);
+          doc.files[id]=r.id; this.dirty=true; await this.idbDel("pending",id); if(p.drop){ await this.idbDel("blobs",id); this.urlCache.delete(id); }
+          this.pending=Math.max(0,this.pending-1); this.persist(); renderStoreBadge();
+        }catch(e){ if(e.status===401) throw e; ferr.push(`${p.name||"fichier"} : ${e.message||"erreur"}`); } }
+      this.fileErr=ferr;
       // 2. fichiers supprimés → corbeille du Drive (récupérables 30 jours)
       const tr=(await this.idbGet("kv","trash"))||[]; for(const fid of tr){ try{ await this.api("PATCH",`${DRIVE}/${fid}`,JSON.stringify({trashed:true}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } } if(tr.length) await this.idbPut("kv","trash",[]);
       // 3. carnet.json
-      const f=(await this.list(`name='carnet.json' and '${this.folder}' in parents and trashed=false`))[0];
+      const f=(await this.list(`name='carnet.json' and '${this.dataFolder}' in parents and trashed=false`))[0];
       let remoteDoc=null;
+      if(!f){ // reprise d'un ancien dossier « Carnet des GR »
+        try{ const old=(await this.list(`mimeType='application/vnd.google-apps.folder' and trashed=false and name='Carnet des GR' and 'root' in parents`))[0];
+          const of=old&&(await this.list(`name='carnet.json' and '${old.id}' in parents and trashed=false`))[0];
+          if(of){ const r=await this.api("GET",`${DRIVE}/${of.id}?alt=media`); remoteDoc=await r.json(); this.legacy={root:old.id,file:of.id}; } }catch(e){ if(e.status===401) throw e; } }
       if(f&&(force||String(f.version)!==String(this.remote.version))){ const r=await this.api("GET",`${DRIVE}/${f.id}?alt=media`); try{ remoteDoc=await r.json(); }catch(e){ remoteDoc=null; } }
       if(remoteDoc&&remoteDoc.v){ const before=stable(doc); doc=mergeDocs(doc,remoteDoc);
         if(stable(doc)!==before){ if(doc.prefs){ prefs={...DEFAULT_PREFS,...doc.prefs}; try{ localStorage.setItem("carnet-gr-prefs",JSON.stringify(prefs)); }catch(e){} } this.derive(); applyStyle(); syncTrackLayers(); renderAll(); }
         this.dirty = this.dirty || stable(doc)!==stable(remoteDoc); }
       const body=new Blob([JSON.stringify(doc)],{type:"application/json"});
-      if(!f){ const r=await this.upload("carnet.json",this.folder,body); this.remote={id:r.id,version:r.version}; this.dirty=false; }
+      if(!f){ const r=await this.upload("carnet.json",this.dataFolder,body); this.remote={id:r.id,version:r.version}; this.dirty=false; }
       else if(this.dirty){ const r=await this.api("PATCH",`${UPLOAD}/${f.id}?uploadType=media&fields=id,version`,body,{"Content-Type":"application/json"}); const j=await r.json(); this.remote={id:j.id,version:j.version}; this.dirty=false; }
       else this.remote={id:f.id,version:f.version};
-      this.lastSync=Date.now(); this.remote.at=this.lastSync; this.err="";
+      if(this.legacy){ await this.migrateLegacy(this.legacy).catch(e=>{ if(e.status===401) throw e; }); this.legacy=null; }
+      this.lastSync=Date.now(); this.remote.at=this.lastSync; this.err=this.fileErr?.length?`${this.fileErr.length} fichier(s) non envoyé(s), nouvel essai à la prochaine synchro. ${this.fileErr.slice(0,2).join(" ; ")}`:"";
       await this.idbPut("kv","remote",this.remote); this.persist();
     }catch(e){ this.err=e.status===401?"auth":(e.message||"Erreur"); if(e.status===401) this.folder=null; }
     this.syncing=false; renderStoreBadge(); if(!$("#sync").hidden) renderSyncPanel();
@@ -862,7 +896,7 @@ async function addPhotos(files){
   toast(`Ajout de ${files.length} photo${files.length>1?"s":""}…`);
   for(const f of files){
     try{ const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.arrayBuffer()) : {};
-      const o=await Store.putBlob(f, f.type||"image/jpeg", {path:["photos",folder||"Photos"], name:f.name, drop:true});
+      const o=await Store.putBlob(f, f.type||"image/jpeg", {path:[folder||"Photos"], name:f.name, drop:true});
       let rec={o,name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
       try{ const big=await resizeImage(f,1800,0.85), th=await resizeImage(f,480,0.8);
         rec={...rec, id:await Store.putBlob(big.blob,"image/jpeg"), t:await Store.putBlob(th.blob,"image/jpeg"), w:big.w, h:big.h};
@@ -871,7 +905,7 @@ async function addPhotos(files){
     }catch(e){ toast(`${f.name} : ajout impossible`); }
   }
   photoTarget.photos=list; await commit(list); renderDetail();
-  toast(`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}${state.mode==="drive"?` · originaux envoyés dans « Carnet des GR / photos / ${folder} »`:""}${noPrev?` (${noPrev} sans aperçu : format non lisible par le navigateur, l'original est gardé)`:""}`);
+  toast(`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}${state.mode==="drive"?` · originaux rangés dans « Mes GR / ${folder} »`:""}${noPrev?` (${noPrev} sans aperçu : format non lisible par le navigateur, l'original est gardé)`:""}`);
 }
 let lb=null;
 async function openLightbox(photos,i,commit){ lb={photos,i,commit:commit||photoTarget?.commit}; await renderLightbox(); }
@@ -1022,7 +1056,7 @@ function renderSyncPanel(){
   let status;
   if(!on) status=`<p><b>Tes données sont enregistrées uniquement dans ce navigateur.</b> Connecte un Google Drive pour les retrouver sur ton téléphone et ton ordinateur, et pour ne rien perdre si tu changes d'appareil.</p>`;
   else if(!S_.hasToken()) status=`<p><b>Google Drive${S_.who?` (${esc(S_.who)})`:""} est relié, mais la session a expiré.</b> Tes modifications restent enregistrées ici et partiront dès que tu te reconnectes.</p>`;
-  else status=`<p><b>Synchronisé avec Google Drive</b>${S_.who?` de <b>${esc(S_.who)}</b>`:""}, dossier « Carnet des GR ».${S_.lastSync?` Dernière synchro à ${new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.`:""}</p>`;
+  else status=`<p><b>Synchronisé avec Google Drive</b>${S_.who?` de <b>${esc(S_.who)}</b>`:""}, dossier « Mes GR ».${S_.lastSync?` Dernière synchro à ${new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.`:""}</p>`;
   const waiting = S_.pending ? `<p class="note">${S_.pending} fichier${S_.pending>1?"s":""} en attente d'envoi.</p>` : "";
   const err = S_.err && S_.err!=="auth" ? `<p class="note warn">Dernière erreur : ${esc(S_.err)}</p>` : "";
   p.innerHTML=`<div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="syncH">
@@ -1077,7 +1111,7 @@ function renderWelcome(){
       <button class="choice" id="wImp"><b>J'ai déjà une sauvegarde</b><span>Reprendre un fichier exporté depuis le Carnet des GR.</span></button>
     </div>
     <input type="file" id="wImpF" accept=".json,application/json" hidden>
-    ${cid?`<p class="note">Avec Google Drive, l'appli ne voit que les fichiers qu'elle crée elle-même, dans le dossier « Carnet des GR ». Si Google affiche « Cette application n'a pas été validée », clique sur « Paramètres avancés » puis sur « Accéder à Carnet des GR ».</p>`:""}
+    ${cid?`<p class="note">Avec Google Drive, l'appli ne voit que les fichiers qu'elle crée elle-même, dans le dossier « Mes GR ». Si Google affiche « Cette application n'a pas été validée », clique sur « Paramètres avancés » puis sur « Accéder à Carnet des GR ».</p>`:""}
     <p class="note">Tu pourras changer d'avis à tout moment avec le bouton en haut du carnet. Ce bouton « ? » réaffiche cette explication. <a href="confidentialite.html" target="_blank" rel="noopener">Confidentialité</a></p>
   </div>`;
   $("#wX")&&($("#wX").onclick=()=>openWelcome(false));
