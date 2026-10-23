@@ -1,7 +1,7 @@
 /* Carnet des GR — fonctionnement hors connexion.
    Pour publier une mise à jour, change le numéro de VERSION ci-dessous. */
-const VERSION = "carnet-gr-2";
-const SHELL = ["./", "index.html", "data.js", "config.js", "vendor/leaflet.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "carnet-gr-3";
+const SHELL = ["./", "index.html", "data.js", "config.js", "leaflet.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 const put = (req, res) => { if (res && (res.ok || res.type === "opaque")) { const c = res.clone(); caches.open(VERSION).then(x => x.put(req, c)); } return res; };
