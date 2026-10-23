@@ -484,8 +484,13 @@ const Store = {
   disconnect(){ this.who=""; this.paths={}; try{ localStorage.removeItem("carnet-who"); }catch(e){} try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
   async api(method,url,body,headers){ const r=await fetch(url,{method,body,headers:{Authorization:"Bearer "+this.token,...(headers||{})}});
     if(!r.ok){ const e=new Error(r.status===401?"Session Google expirée":r.status===403?"Accès refusé par Google ("+r.status+")":"Erreur Google Drive ("+r.status+")"); e.status=r.status; if(r.status===401){ this.token=null; this.tokenExp=0; } throw e; } return r; },
-  async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime,mimeType)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
+  async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime,mimeType,size)&spaces=drive&pageSize=50&orderBy=createdTime`); return (await r.json()).files||[]; },
   async mkdir(name,parent,tag){ const r=await this.api("POST",`${DRIVE}?fields=id`,JSON.stringify({name,mimeType:FOLDER,...(parent?{parents:[parent]}:{}),...(tag?{appProperties:{cg:tag}}:{})}),{"Content-Type":"application/json"}); return (await r.json()).id; },
+  async listAll(q,fields){ let out=[],tok=""; do{ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=nextPageToken,files(${fields||"id,name,size,mimeType,appProperties"})&spaces=drive&pageSize=1000${tok?"&pageToken="+encodeURIComponent(tok):""}`); const j=await r.json(); out=out.concat(j.files||[]); tok=j.nextPageToken||""; }while(tok); return out; },
+  async uploadOriginal(name,parent,blob,type){ // ne renvoie pas un fichier déjà présent (même nom, même poids) dans le dossier
+    try{ const same=(await this.list(`'${parent}' in parents and trashed=false and name='${this.qs(name)}'`)).find(f=>+f.size===blob.size); if(same) return {id:same.id}; }catch(e){ if(e.status===401) throw e; }
+    return this.uploadAny(name,parent,blob,type); },
+  async hasOriginal(oid){ if(!oid) return false; const v=doc.files[oid]; if(v&&v!=="x") return true; return !!(await this.idbGet("pending",oid)); },
   qs(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); },
   async upload(name,parent,blob){ const fd=new FormData(); fd.append("metadata",new Blob([JSON.stringify({name,parents:[parent]})],{type:"application/json"})); fd.append("file",blob,name);
     const r=await this.api("POST",`${UPLOAD}?uploadType=multipart&fields=id,version`,fd); return r.json(); },
@@ -510,10 +515,10 @@ const Store = {
     for(const k of keys){ const f=(await this.list(`mimeType='${FOLDER}' and trashed=false and appProperties has { key='cg' and value='${this.qs(k)}' }`))[0];
       if(f&&f.name!==rn[k]){ try{ await this.api("PATCH",`${DRIVE}/${f.id}`,JSON.stringify({name:rn[k]}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } } }
     await this.idbPut("kv","renames",{}); },
-  async putOriginal(file,spec){ // envoie l'original tout de suite si le Drive est joignable
-    const id="o_"+uid();
+  async putOriginal(file,spec,forceId){ // envoie l'original tout de suite si le Drive est joignable
+    const id=forceId||("o_"+uid());
     if(state.mode==="drive"&&this.hasToken()&&navigator.onLine){
-      try{ await this.folders(); const parent=await this.folderFor(spec); const r=await this.uploadAny(file.name,parent,file,file.type||"image/jpeg");
+      try{ await this.folders(); const parent=await this.folderFor(spec); const r=await this.uploadOriginal(file.name,parent,file,file.type||"image/jpeg");
         doc.files[id]=r.id; this.touch(); return {id,sent:true}; }catch(e){ if(e.status===401){ this.token=null; this.tokenExp=0; } } }
     const blob=new Blob([await file.arrayBuffer()],{type:file.type||"image/jpeg"}); // copie en mémoire (plus fiable que le fichier lui-même sur iPhone)
     await this.putBlob(blob,blob.type,{fspec:spec,name:file.name,drop:true},id); return {id,sent:false}; },
@@ -547,6 +552,10 @@ const Store = {
   async sync(force){
     if(state.mode!=="drive"||this.syncing){ renderStoreBadge(); return; }
     if(!this.hasToken()||!navigator.onLine){ renderStoreBadge(); return; }
+    if(navigator.locks?.request){ return navigator.locks.request("carnet-gr-sync",{ifAvailable:true},async lock=>{ if(!lock) return; await this._sync(force); }); }
+    return this._sync(force); },
+  async _sync(force){
+    if(this.syncing) return;
     this.syncing=true; renderStoreBadge();
     try{
       await this.folders();
@@ -559,7 +568,7 @@ const Store = {
       for(const [id,p] of ordered){ const blob=await this.idbGet("blobs",id);
         if(!blob||doc.files[id]==="x"){ await this.idbDel("pending",id); this.pending=Math.max(0,this.pending-1); continue; }
         try{ const parent=await this.folderFor(this.destOf(id,p));
-          const r=await this.uploadAny(p.name||(id+(p.type==="image/jpeg"?".jpg":".gpx")), parent, blob, p.type);
+          const nm=p.name||(id+(p.type==="image/jpeg"?".jpg":".gpx")); const r=p.drop?await this.uploadOriginal(nm,parent,blob,p.type):await this.uploadAny(nm,parent,blob,p.type);
           doc.files[id]=r.id; this.dirty=true; await this.idbDel("pending",id); if(p.drop){ await this.idbDel("blobs",id); this.urlCache.delete(id); }
           this.pending=Math.max(0,this.pending-1); this.persist(); renderStoreBadge();
         }catch(e){ if(e.status===401) throw e; ferr.push(`${p.name||"fichier"} : ${e.message||"erreur"}`); } }
@@ -914,35 +923,47 @@ function safeName(s){ return String(s).replace(/[\\/:*?"<>|\u0000-\u001f]/g,"-")
 function grFolder(g){ return safeName(g.key+(g.name?" – "+g.name:"")); }
 function grSpec(g){ return {key:"gr:"+keyId(g.key), name:grFolder(g)}; }
 function trSpec(id,t){ return t.gr&&GRBY[t.gr] ? grSpec(GRBY[t.gr]) : {key:"tr:"+id, name:safeName("Traces – "+t.name)}; }
+async function makePreviews(src){ // un seul décodage de l'image, puis libération immédiate de la mémoire
+  let bmp=null, url=null;
+  try{ bmp=await createImageBitmap(src); }catch(e){ url=URL.createObjectURL(src); bmp=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error("format illisible")); im.src=url; }); }
+  try{ const W=bmp.width||bmp.naturalWidth, H=bmp.height||bmp.naturalHeight; const r=Math.min(1,1600/Math.max(W,H)); const w=Math.max(1,Math.round(W*r)), h=Math.max(1,Math.round(H*r));
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(bmp,0,0,w,h); bmp.close?.(); bmp=null;
+    const big=await new Promise(res=>c.toBlob(res,"image/jpeg",0.82));
+    const r2=Math.min(1,400/Math.max(w,h)); const c2=document.createElement("canvas"); c2.width=Math.max(1,Math.round(w*r2)); c2.height=Math.max(1,Math.round(h*r2)); c2.getContext("2d").drawImage(c,0,0,c2.width,c2.height);
+    const th=await new Promise(res=>c2.toBlob(res,"image/jpeg",0.78)); c.width=c.height=0; c2.width=c2.height=0;
+    if(!big||!th) throw new Error("aperçu impossible"); return {big,th,w,h};
+  } finally { bmp?.close?.(); if(url) URL.revokeObjectURL(url); } }
 async function addPhotos(files){
   if(!photoTarget||state.readOnly) return; files=files.filter(f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)); if(!files.length) return;
-  const {commit,folder}=photoTarget; let list=[...photoTarget.photos]; let ok=0, noPrev=0, sent=0, kept=0; const fails=[];
+  const {commit,folder}=photoTarget; let list=[...photoTarget.photos]; let ok=0, noPrev=0, sent=0, kept=0, dup=0, relinked=0; const fails=[];
   try{ navigator.storage?.persist?.(); }catch(e){}
-  const n=files.length;
-  let dup=0;
+  const spec=folder||{key:"n:Photos",name:"Photos"}; const n=files.length;
   for(let i=0;i<n;i++){ const f=files[i];
-    if(list.some(p=>p.name===f.name&&p.size===f.size)){ dup++; continue; } // déjà dans ce GR
-    toast(`Photo ${i+1} / ${n}…`);
-    try{ const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.slice(0,262144).arrayBuffer()) : {};
-      let rec={name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
-      // 1. aperçus légers (gardés sur l'appareil)
-      try{ const big=await resizeImage(f,1600,0.82), th=await resizeImage(f,400,0.78);
-        rec={...rec, id:await Store.putBlob(big.blob,"image/jpeg"), t:await Store.putBlob(th.blob,"image/jpeg"), w:big.w, h:big.h};
-      }catch(e){ if(e?.name==="QuotaExceededError") throw e; noPrev++; }
-      // 2. original : envoyé directement au Drive si possible, sinon gardé en attente sur l'appareil
-      const r=await Store.putOriginal(f, folder||{key:"n:Photos",name:"Photos"}); rec.o=r.id; if(r.sent) sent++; else kept++;
-      list.push(rec); ok++;
-      if(ok%5===0) await commit(list);
+    toast(`Photo ${i+1} / ${n}…`, 60000);
+    try{
+      const ei=list.findIndex(p=>p.name===f.name&&p.size===f.size);
+      if(ei>=0){ // déjà dans la fiche : on vérifie seulement que l'original est bien arrivé
+        if(await Store.hasOriginal(list[ei].o)){ dup++; continue; }
+        const oid=list[ei].o||("o_"+uid()); list[ei]={...list[ei],o:oid}; await commit(list);
+        const r=await Store.putOriginal(f,spec,oid); if(r.sent) sent++; else kept++; relinked++; continue; }
+      const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.slice(0,262144).arrayBuffer()) : {};
+      const oid="o_"+uid(); let rec={o:oid,name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
+      try{ const pv=await makePreviews(f); rec={...rec, id:await Store.putBlob(pv.big,"image/jpeg"), t:await Store.putBlob(pv.th,"image/jpeg"), w:pv.w, h:pv.h}; }
+      catch(e){ if(e?.name==="QuotaExceededError") throw e; noPrev++; }
+      list.push(rec); await commit(list); ok++;           // la fiche est enregistrée avant l'envoi : rien ne se perd si la page se ferme
+      const r=await Store.putOriginal(f,spec,oid); if(r.sent) sent++; else kept++;
+      await new Promise(r=>setTimeout(r,30));
     }catch(e){ fails.push(f.name+(e?.name==="QuotaExceededError"?" (mémoire de l'appareil pleine)":"")); }
   }
   photoTarget.photos=list; await commit(list); renderDetail();
   let msg=ok?`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}`:"Aucune nouvelle photo";
-  if(sent) msg+=` · ${sent>1?sent+" originaux rangés":"original rangé"} dans « Mes GR / ${folder?.name||"Photos"} »`;
+  if(sent) msg+=` · ${sent>1?sent+" originaux rangés":"original rangé"} dans « ${spec.name} »`;
   if(kept) msg+= state.mode==="drive" ? ` · ${kept>1?kept+" originaux":"original"} en attente d'envoi (dès que le Drive sera joignable)` : (kept>1?` · ${kept} originaux gardés sur cet appareil`:" · original gardé sur cet appareil");
-  if(noPrev) msg+=` · ${noPrev} sans aperçu (format non lisible par ce navigateur, l'original est gardé)`;
+  if(relinked) msg+=` · ${relinked>1?relinked+" originaux renvoyés":"original renvoyé"}`;
   if(dup) msg+=` · ${dup} déjà présente${dup>1?"s":""}, ignorée${dup>1?"s":""}`;
+  if(noPrev) msg+=` · ${noPrev} sans aperçu (format non lisible par ce navigateur, l'original est gardé)`;
   if(fails.length) msg+=` · ${fails.length} échec${fails.length>1?"s":""} : ${fails.slice(0,3).join(", ")}${fails.length>3?"…":""}`;
-  toast(msg, fails.length||dup||kept ? 8000 : 4500);
+  toast(msg, 9000);
 }
 let lb=null;
 async function openLightbox(photos,i,commit){ lb={photos,i,commit:commit||photoTarget?.commit}; await renderLightbox(); }
@@ -1084,6 +1105,48 @@ function bindPartsEditor(g){
 }
 function bandsHtml(parts,dist){ return unionParts(parts).map(([a,b])=>`<i style="left:${a/dist*100}%;width:${(b-a)/dist*100}%"></i>`).join(""); }
 
+/* ===================== Réparation des photos (doublons, photos sans fiche) ===================== */
+async function repairPhotos(){
+  if(state.mode!=="drive"||!Store.hasToken()){ toast("Connecte d'abord Google Drive (bouton en haut du carnet)."); return; }
+  const btn=$("#sFix"); if(btn){ btn.disabled=true; btn.textContent="Réparation en cours…"; }
+  let recDup=0, trashed=0, recovered=0, relinked=0;
+  try{
+    await Store.folders();
+    const targets=[];
+    for(const [k] of Object.entries(doc.grs)){ const g=GRS.find(x=>keyId(x.key)===k); if(g) targets.push({coll:"grs",id:k,spec:grSpec(g)}); }
+    for(const [id,t] of Object.entries(doc.tracks)) if(t&&!t.deleted) targets.push({coll:"tracks",id,spec:trSpec(id,t)});
+    // 1. une même photo (même nom, même poids) présente plusieurs fois dans une fiche
+    for(const tg of targets){ const rec=doc[tg.coll][tg.id]; const ph=rec.photos||[]; const seen=new Set(); const keep=[];
+      for(const p of ph){ const key=p.name+"|"+p.size; if(p.name&&p.size&&seen.has(key)){ recDup++; continue; } seen.add(key); keep.push(p); }
+      if(keep.length!==ph.length) await Store.save(tg.coll,tg.id,{...rec,photos:keep}); }
+    // 2. dans chaque dossier du Drive : doublons à la corbeille, photos sans fiche rattachées à leur GR ou à leur trace
+    const folders=await Store.listAll(`mimeType='${FOLDER}' and trashed=false and '${Store.folder}' in parents`,"id,name,appProperties");
+    const refd=()=>{ const s=new Set(); const add=ph=>{ for(const p of ph||[]) for(const k of [p.o,p.id,p.t]){ const v=k&&doc.files[k]; if(v&&v!=="x") s.add(v); } };
+      for(const r of Object.values(doc.grs)) add(r.photos); for(const r of Object.values(doc.tracks)) if(r&&!r.deleted) add(r.photos); return s; }; // fichiers utilisés par une fiche
+    for(const fo of folders){ const tag=fo.appProperties?.cg; if(tag==="data") continue;
+      const tg=targets.find(t=>t.spec.key===tag)||targets.find(t=>t.spec.name===fo.name)||null;
+      toast(`Vérification de « ${fo.name} »…`,60000);
+      const files=await Store.listAll(`'${fo.id}' in parents and trashed=false and mimeType!='${FOLDER}'`,"id,name,size,mimeType");
+      const groups={}; for(const f of files) (groups[f.name+"|"+f.size]=groups[f.name+"|"+f.size]||[]).push(f);
+      for(const grp of Object.values(groups)){ const R=refd(); grp.sort((a,b)=>(R.has(b.id)?1:0)-(R.has(a.id)?1:0)); const [keep,...rest]=grp;
+        for(const d of rest){ if(R.has(d.id)) continue; await Store.api("PATCH",`${DRIVE}/${d.id}`,JSON.stringify({trashed:true}),{"Content-Type":"application/json"}); trashed++; }
+        if(R.has(keep.id)||!tg||!/^image\//.test(keep.mimeType||"image/jpeg")) continue;
+        const rec=doc[tg.coll][tg.id]; const ph=(rec.photos||[]).map(p=>({...p}));
+        const oid="o_"+uid(); doc.files[oid]=keep.id;
+        const ex=ph.find(p=>p.name===keep.name&&p.size===+keep.size);
+        if(ex){ ex.o=oid; await Store.save(tg.coll,tg.id,{...rec,photos:ph}); relinked++; continue; }
+        toast(`Récupération de ${keep.name}…`,60000);
+        const r=await Store.api("GET",`${DRIVE}/${keep.id}?alt=media`); const blob=await r.blob();
+        const prec={o:oid,name:keep.name,size:+keep.size,cap:"",added:new Date().toISOString()};
+        try{ if(/jpe?g/i.test(keep.mimeType||keep.name)) Object.assign(prec,readExif(await blob.slice(0,262144).arrayBuffer())); }catch(e){}
+        try{ const pv=await makePreviews(blob); prec.id=await Store.putBlob(pv.big,"image/jpeg"); prec.t=await Store.putBlob(pv.th,"image/jpeg"); prec.w=pv.w; prec.h=pv.h; }catch(e){}
+        ph.push(prec); await Store.save(tg.coll,tg.id,{...doc[tg.coll][tg.id],photos:ph}); recovered++; } }
+    Store.touch(); await Store.sync(true);
+    toast(`Réparation terminée : ${recovered} photo${recovered>1?"s":""} récupérée${recovered>1?"s":""}, ${trashed} doublon${trashed>1?"s":""} mis à la corbeille du Drive${recDup?`, ${recDup} en double retirée${recDup>1?"s":""} des fiches`:""}${relinked?`, ${relinked} original${relinked>1?"s":""} relié${relinked>1?"s":""}`:""}.`, 12000);
+  }catch(e){ toast("Réparation interrompue : "+(e.message||e)+". Tu peux la relancer, elle reprend où elle en était.",10000); }
+  renderAll(); if(selected) renderDetail(); renderSyncPanel();
+}
+
 /* ===================== Panneau « Sauvegarde & synchronisation » ===================== */
 function openSync(v){ const p=$("#sync"); p.hidden=!v; if(v){ renderSyncPanel(); Store.loadGis().catch(()=>{}); } }
 $("#store").onclick=()=>openSync(true);
@@ -1106,11 +1169,13 @@ function renderSyncPanel(){
       ${on?`<button class="btn" id="sOff">Changer de compte / déconnecter</button>`:""}
     </div>
     ${cid?"":`<div class="field"><label for="sCid">Identifiant client Google</label><input id="sCid" placeholder="123456-abc.apps.googleusercontent.com" autocomplete="off"><div class="note" style="margin-top:4px">À créer une seule fois dans la console Google (voir le guide d'installation). Tu peux aussi l'écrire dans le fichier config.js pour ne pas le saisir sur chaque appareil.</div></div><button class="btn" id="sCidOk">Enregistrer l'identifiant</button>`}
+    ${on&&S_.hasToken()?`<hr><h4>Photos en double ou manquantes ?</h4><p class="note">Met à la corbeille du Drive les photos envoyées plusieurs fois, et rattache à leur GR les photos présentes dans le Drive mais absentes de l'appli.</p><div class="row-btns"><button class="btn" id="sFix">Réparer mes photos</button></div>`:""}
     <hr>
     <h4>Copie de sauvegarde</h4>
     <p class="note">Un fichier que tu gardes où tu veux (clé USB, autre cloud). Il permet aussi de passer d'un appareil à l'autre sans Google Drive.</p>
     <div class="row-btns"><button class="btn" id="sExp">Exporter (données)</button><button class="btn" id="sExpP">Exporter avec les photos</button><button class="btn" id="sImp">Importer…</button></div>
     <input type="file" id="sImpF" accept=".json,application/json" hidden>
+    <p class="note" style="text-align:right">Version 12</p>
   </div>`;
   $("#syncX").onclick=()=>openSync(false);
   const go=async(pick)=>{ try{ await Store.connect(pick); toast("Google Drive connecté"); renderStoreBadge(); renderSyncPanel(); await Store.sync(true); }catch(e){ toast(e.message); renderSyncPanel(); } };
@@ -1119,6 +1184,7 @@ function renderSyncPanel(){
   $("#sNow")&&($("#sNow").onclick=()=>Store.sync(true));
   $("#sOff")&&($("#sOff").onclick=()=>{ Store.disconnect(); renderSyncPanel(); toast("Cet appareil n'est plus relié au Drive. Tes données restent ici et sur le Drive."); });
   $("#sCidOk")&&($("#sCidOk").onclick=()=>{ const v=$("#sCid").value.trim(); if(!/\.apps\.googleusercontent\.com$/.test(v)){ toast("L'identifiant doit se terminer par .apps.googleusercontent.com"); return; } try{ localStorage.setItem("carnet-client-id",v); }catch(e){} Store.loadGis().catch(()=>{}); renderSyncPanel(); });
+  $("#sFix")&&($("#sFix").onclick=()=>repairPhotos());
   $("#sExp").onclick=()=>Store.exportFile(false);
   $("#sExpP").onclick=async()=>{ toast("Préparation de la sauvegarde…"); await Store.exportFile(true); };
   $("#sImp").onclick=()=>$("#sImpF").click();
