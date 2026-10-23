@@ -1152,7 +1152,7 @@ function openSync(v){ const p=$("#sync"); p.hidden=!v; if(v){ renderSyncPanel();
 $("#store").onclick=()=>openSync(true);
 function renderSyncPanel(){
   const p=$("#sync"); if(p.hidden) return; const S_=Store; const cid=S_.clientId(); const on=state.mode==="drive";
-  const nGr=Object.values(doc.grs).filter(r=>r.status&&r.status!=="todo").length, nTr=Object.keys(state.tracks).length, nPh=Object.values(doc.files).filter(v=>v!=="x").length;
+  const nGr=Object.values(doc.grs).filter(r=>r.status&&r.status!=="todo").length, nTr=Object.keys(state.tracks).length, nPh=[...Object.values(doc.grs),...Object.values(state.tracks)].reduce((s,r)=>s+((r&&r.photos)||[]).length,0);
   let status;
   if(!on) status=`<p><b>Tes données sont enregistrées uniquement dans ce navigateur.</b> Connecte un Google Drive pour les retrouver sur ton téléphone et ton ordinateur, et pour ne rien perdre si tu changes d'appareil.</p>`;
   else if(!S_.hasToken()) status=`<p><b>Google Drive${S_.who?` (${esc(S_.who)})`:""} est relié, mais la session a expiré.</b> Tes modifications restent enregistrées ici et partiront dès que tu te reconnectes.</p>`;
@@ -1162,7 +1162,7 @@ function renderSyncPanel(){
   p.innerHTML=`<div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="syncH">
     <button class="close" id="syncX" aria-label="Fermer">×</button>
     <h3 id="syncH">Sauvegarde & synchronisation</h3>
-    <div class="sum"><span><b>${nGr}</b> GR</span><span><b>${nTr}</b> trace${nTr>1?"s":""}</span><span><b>${nPh}</b> fichier${nPh>1?"s":""}</span></div>
+    <div class="sum"><span><b>${nGr}</b> GR</span><span><b>${nTr}</b> trace${nTr>1?"s":""}</span><span><b>${nPh}</b> photo${nPh>1?"s":""}</span></div>
     ${status}${on?`<p class="note">Pour retrouver le même carnet sur un autre appareil, connecte-y le même compte Google.</p>`:""}${waiting}${err}
     <div class="row-btns">
       ${!cid?"":!on?`<button class="btn primary" id="sConnect">Connecter Google Drive</button>`:!S_.hasToken()?`<button class="btn primary" id="sRe">Se reconnecter</button>`:`<button class="btn primary" id="sNow" ${S_.syncing?"disabled":""}>${S_.syncing?"Synchro en cours…":"Synchroniser maintenant"}</button>`}
@@ -1175,7 +1175,7 @@ function renderSyncPanel(){
     <p class="note">Un fichier que tu gardes où tu veux (clé USB, autre cloud). Il permet aussi de passer d'un appareil à l'autre sans Google Drive.</p>
     <div class="row-btns"><button class="btn" id="sExp">Exporter (données)</button><button class="btn" id="sExpP">Exporter avec les photos</button><button class="btn" id="sImp">Importer…</button></div>
     <input type="file" id="sImpF" accept=".json,application/json" hidden>
-    <p class="note" style="text-align:right">Version 12</p>
+    <p class="note" style="text-align:right">Version 13</p>
   </div>`;
   $("#syncX").onclick=()=>openSync(false);
   const go=async(pick)=>{ try{ await Store.connect(pick); toast("Google Drive connecté"); renderStoreBadge(); renderSyncPanel(); await Store.sync(true); }catch(e){ toast(e.message); renderSyncPanel(); } };
