@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Carnet des GR</title>
+<meta name="description" content="Mon carnet des sentiers de grande randonnée : carte des GR de France, portions parcourues, traces GPX et photos.">
+<meta name="theme-color" content="#1d2a23">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Carnet GR">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:wght@400;500;700;800&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: carte plein écran à droite, carnet (liste / fiche) en colonne à gauche ; sur téléphone la carte passe au-dessus du carnet. */
+:root{
+  --bg:#eceee8; --panel:#f7f8f4; --ink:#1d2a23; --muted:#5f6d65; --line:#d3d9d1; --soft:#e3e7e0;
+  --accent:#c4122f; --accent-ink:#ffffff; --ok:#2e7d4f; --warn:#b7791f;
+  --display:"Alegreya",Georgia,"Times New Roman",serif;
+  --body:"Alegreya Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"Martian Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --radius:10px; --side:380px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#101613; --panel:#161e1a; --ink:#e4ebe5; --muted:#93a39a; --line:#2a3630; --soft:#1e2822;
+  --accent:#ff4a63; --accent-ink:#1a0207; --ok:#5fc48a; --warn:#e0a84a; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#101613; --panel:#161e1a; --ink:#e4ebe5; --muted:#93a39a; --line:#2a3630; --soft:#1e2822;
+  --accent:#ff4a63; --accent-ink:#1a0207; --ok:#5fc48a; --warn:#e0a84a; color-scheme:dark }
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:var(--side) 1fr;height:100%;min-height:0}
+@media (max-width:820px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:52vh auto;height:auto;min-height:100%}
+  .mapwrap{order:-1;height:52vh}
+  .side{border-right:0;border-top:1px solid var(--line);max-height:none;overflow:visible}
+  .side .scroll{overflow:visible}
+}
+
+/* ---------- Carnet (colonne) ---------- */
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0;
+  padding-left:max(0px, env(safe-area-inset-left,0px))}
+.brand{display:flex;align-items:center;gap:12px;padding:18px 18px 10px}
+.blaze{display:inline-grid;grid-template-rows:1fr 1fr;width:30px;height:22px;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px var(--line);flex:none}
+.blaze i{display:block}.blaze i:first-child{background:#fff}.blaze i:last-child{background:var(--accent)}
+.brand h1{font-family:var(--display);font-weight:700;font-size:1.55rem;letter-spacing:.005em;margin:0;line-height:1.1}
+.brand .sub{font-size:.8rem;color:var(--muted)}
+.store{margin-left:auto;font-size:.72rem;color:var(--muted);text-align:right;line-height:1.2;max-width:120px}
+.store b{display:block;color:var(--ink);font-weight:700}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-block:1px solid var(--line);margin-top:6px}
+.stat{background:var(--panel);padding:10px 14px}
+.stat .v{font-family:var(--mono);font-size:1.05rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .l{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+
+.tabs{display:flex;gap:4px;padding:12px 14px 0}
+.tab{flex:1;border:1px solid var(--line);background:transparent;border-radius:8px;padding:7px 8px;font-weight:700;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.tools{padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.search{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 10px;font-size:.82rem;color:var(--muted)}
+.chip[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--soft);font-weight:700}
+.scroll{flex:1;overflow:auto;min-height:0}
+
+.list{list-style:none;margin:0;padding:0 6px 24px}
+.row{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 8px;border-radius:8px;cursor:pointer}
+.row:hover{background:var(--soft)}
+.row.sel{background:var(--soft);box-shadow:inset 3px 0 0 var(--accent)}
+.num{font-family:var(--mono);font-size:.78rem;min-width:62px;text-align:center;padding:3px 6px;border-radius:5px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.row.done .num{background:linear-gradient(#fff 0 50%, var(--done) 50% 100%);color:#111;border-color:transparent;font-weight:500;text-shadow:0 0 3px #fff}
+.row.partial .num{background:linear-gradient(#fff 0 50%, color-mix(in srgb,var(--done) 45%, #fff) 50% 100%);color:#111;border-color:transparent}
+.row .t{min-width:0}
+.row .t b{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t span{display:block;font-size:.78rem;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.row .meta{font-size:.72rem;color:var(--muted)}
+.check{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:transparent;display:grid;place-items:center;flex:none}
+.check svg{width:16px;height:16px;opacity:0}
+.row.done .check{background:var(--done);border-color:var(--done)}
+.row.done .check svg{opacity:1;stroke:#fff}
+.row.partial .check{border-color:var(--done);border-style:dashed}
+.row.partial .check svg{opacity:.8;stroke:var(--done)}
+.dot{width:12px;height:12px;border-radius:50%;flex:none;box-shadow:0 0 0 2px var(--panel),0 0 0 3px var(--line)}
+.empty{padding:28px 18px;color:var(--muted);text-align:center}
+.empty b{display:block;color:var(--ink);font-family:var(--display);font-size:1.15rem;margin-bottom:4px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 12px;font-weight:700;display:inline-flex;gap:6px;align-items:center}
+.btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.btn.danger{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.btn svg{width:16px;height:16px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- Fiche ---------- */
+.detail{padding:6px 18px 32px;display:flex;flex-direction:column;gap:16px}
+.back{align-self:flex-start;border:0;background:transparent;color:var(--muted);padding:4px 0;font-weight:700}
+.dh .ref{font-family:var(--mono);font-size:.8rem;color:var(--muted);letter-spacing:.04em}
+.dh h2{font-family:var(--display);font-size:2.2rem;line-height:1;margin:2px 0 4px;text-wrap:balance}
+.dh p{margin:0;color:var(--muted);text-wrap:balance}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:8px 4px;font-weight:700;color:var(--muted);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--done);color:#fff}
+.seg button[data-s="todo"][aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 12px}
+.kv div{border-top:1px solid var(--line);padding-top:6px}
+.kv .l{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.kv .v{font-family:var(--mono);font-size:.98rem;font-variant-numeric:tabular-nums}
+.pf{margin:6px 0 0;padding-right:6px;user-select:none;-webkit-user-select:none}
+.pf-plot:hover .pf-maxl{opacity:0}
+.pf-box{display:grid;grid-template-columns:44px minmax(0,1fr);height:140px;padding-top:10px}
+.pf-y{position:relative;font:500 10px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.pf-y span{position:absolute;right:8px;transform:translateY(-50%);white-space:nowrap}
+.pf-plot{position:relative;min-width:0;touch-action:pan-y;cursor:crosshair;border-bottom:1px solid var(--muted)}
+.pf-plot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;display:block}
+.pf .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.pf .area{fill:color-mix(in srgb,var(--done) 16%,transparent)}
+.pf .ln{fill:none;stroke:var(--done);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.pf-x{position:relative;height:20px;margin-left:44px;font:500 10px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.pf-x span{position:absolute;top:7px;transform:translateX(-50%);white-space:nowrap}
+.pf-x span.s{transform:none}.pf-x span.e{transform:translateX(-100%);color:var(--ink)}
+.pf-max{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--done);box-shadow:0 0 0 2px var(--panel);transform:translate(-50%,-50%)}
+.pf-maxl{position:absolute;transform:translate(-50%,calc(-100% - 7px));font:600 10px/1 var(--mono);color:var(--ink);white-space:nowrap;padding:2px 4px;border-radius:4px;background:color-mix(in srgb,var(--panel) 85%,transparent)}
+.pf-cur{position:absolute;top:0;bottom:0;width:0;border-left:1px solid color-mix(in srgb,var(--ink) 55%,transparent);pointer-events:none}
+.pf-cur i{position:absolute;left:0;width:9px;height:9px;border-radius:50%;background:var(--done);box-shadow:0 0 0 2px var(--panel);transform:translate(-50%,-50%)}
+.pf-cur b{position:absolute;top:-6px;left:8px;font:600 10.5px/1 var(--mono);white-space:nowrap;background:var(--ink);color:var(--panel);padding:4px 6px;border-radius:5px}
+.pf-cur b.l{left:auto;right:8px}
+.field label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.field input,.field textarea,.field select{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
+.field textarea{min-height:72px;resize:vertical}
+.links{display:flex;gap:12px;flex-wrap:wrap;font-size:.88rem}
+.links a{color:var(--ink)}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.sec-h h3{font-family:var(--display);font-size:1.2rem;margin:0}
+.sec-h span{font-size:.8rem;color:var(--muted)}
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.gallery button{padding:0;border:0;border-radius:6px;overflow:hidden;aspect-ratio:1;background:var(--soft);max-width:100%}
+.gallery img{width:100%;height:100%;object-fit:cover;display:block}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:.88rem}
+.drop.over{border-color:var(--accent);color:var(--ink);background:var(--soft)}
+.drop button{margin-top:6px}
+.note{font-size:.78rem;color:var(--muted)}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem}
+
+/* ---------- Carte ---------- */
+.mapwrap{position:relative;min-width:0;min-height:0}
+#map{position:absolute;inset:0;background:var(--sea,#c7d6dc)}
+.mctl{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:max(12px, env(safe-area-inset-right,0px));display:flex;gap:6px;z-index:800;flex-wrap:wrap;justify-content:flex-end}
+.mbtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:7px 11px;font-weight:700;display:inline-flex;align-items:center;gap:6px;box-shadow:0 1px 3px rgb(0 0 0 / .12)}
+.mbtn svg{width:16px;height:16px}
+.zoom{position:absolute;bottom:calc(28px + env(safe-area-inset-bottom,0px));right:max(12px, env(safe-area-inset-right,0px));display:flex;flex-direction:column;z-index:800;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 1px 3px rgb(0 0 0 / .12)}
+.zoom button{width:36px;height:34px;border:0;background:var(--panel);font-size:1.1rem;font-weight:700;border-bottom:1px solid var(--line)}
+.zoom button:last-child{border-bottom:0}
+.scale{position:absolute;left:12px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:700;font-family:var(--mono);font-size:.66rem;color:var(--mapink,#333)}
+.pop{position:absolute;top:calc(56px + env(safe-area-inset-top,0px));right:max(12px, env(safe-area-inset-right,0px));z-index:900;width:min(320px, calc(100% - 24px));background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgb(0 0 0 / .18);padding:14px 16px;display:flex;flex-direction:column;gap:12px;max-height:calc(100% - 80px);overflow:auto}
+.pop h3{margin:0;font-family:var(--display);font-size:1.2rem}
+.styles{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.styles button{border:1px solid var(--line);border-radius:8px;padding:0;overflow:hidden;background:transparent;text-align:left}
+.styles button[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.styles .sw{height:34px;display:block}
+.styles span{display:block;font-size:.8rem;font-weight:700;padding:4px 8px}
+.swatches{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.swatches button{width:26px;height:26px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line)}
+.swatches button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.swatches input[type=color]{width:30px;height:28px;border:0;background:transparent;padding:0}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.9rem}
+.opt input[type=range]{width:140px}
+.legend{position:absolute;left:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:700;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:.78rem;display:flex;gap:12px;flex-wrap:wrap;max-width:calc(100% - 24px - 180px)}
+.legend i{display:inline-block;width:18px;height:0;border-top:3px solid;vertical-align:middle;margin-right:5px;border-radius:2px}
+.dropmap{position:absolute;inset:0;z-index:950;display:grid;place-items:center;background:color-mix(in srgb,var(--panel) 70%,transparent);font-family:var(--display);font-size:1.6rem;border:3px dashed var(--accent)}
+
+/* Étiquettes cartographiques */
+.lbl{white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%);color:var(--mapink,#333);text-shadow:0 0 3px var(--halo,#fff),0 0 3px var(--halo,#fff),0 0 2px var(--halo,#fff)}
+.lbl.city{font-family:var(--body);font-size:12px;font-weight:700}
+.lbl.city::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:currentColor;margin-right:4px;vertical-align:1px}
+.lbl.big{font-size:13.5px}
+.lbl.mass{font-family:var(--display);font-style:italic;font-size:15px;letter-spacing:.18em;text-transform:uppercase;opacity:.62;font-weight:500}
+.lbl.sea{font-family:var(--display);font-style:italic;font-size:14px;letter-spacing:.25em;color:var(--seaink,#4c6b78);text-shadow:none;opacity:.9}
+.lbl.land{font-family:var(--display);font-size:12px;letter-spacing:.3em;text-transform:uppercase;opacity:.5;text-shadow:none}
+.phm{width:38px;height:38px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgb(0 0 0 / .35);overflow:hidden;background:#ccc;transform:translate(-50%,-50%)}
+.phm img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* Visionneuse */
+.lightbox{position:fixed;inset:0;z-index:2000;background:rgb(8 10 9 / .92);display:grid;grid-template-rows:1fr auto;color:#eee;
+  padding:env(safe-area-inset-top,0px) max(16px, env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(16px, env(safe-area-inset-left,0px))}
+.lightbox .stage{position:relative;display:grid;place-items:center;min-height:0;padding:16px 0}
+.lightbox img{max-width:100%;max-height:calc(100vh - 140px);object-fit:contain;border-radius:4px}
+.lightbox .nav{position:absolute;top:50%;transform:translateY(-50%);border:0;background:rgb(255 255 255 / .12);color:#fff;width:44px;height:44px;border-radius:50%;font-size:1.4rem}
+.lightbox .prev{left:0}.lightbox .next{right:0}
+.lightbox .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0 14px}
+.lightbox .bar input{flex:1;min-width:160px;background:rgb(255 255 255 / .08);border:1px solid rgb(255 255 255 / .2);border-radius:8px;padding:7px 10px;color:#fff}
+.lightbox .btn{background:rgb(255 255 255 / .1);color:#fff;border-color:rgb(255 255 255 / .2)}
+.lightbox .close{position:absolute;top:10px;right:0;border:0;background:transparent;color:#fff;font-size:1.6rem}
+.lightbox .cap{font-size:.82rem;color:#bbb;font-family:var(--mono)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:3000;background:var(--ink);color:var(--panel);padding:9px 14px;border-radius:9px;font-size:.9rem;box-shadow:0 6px 20px rgb(0 0 0 / .25);max-width:calc(100% - 32px)}
+@media (max-width:600px){.legend{top:auto;bottom:calc(26px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 84px);gap:8px;font-size:.72rem}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- Leaflet (essentiel, intégré) ---------- */
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer{position:absolute;left:0;top:0}
+.leaflet-container{overflow:hidden;-webkit-tap-highlight-color:transparent;font-family:var(--body);touch-action:none;outline-offset:1px}
+.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-image-layer,.leaflet-pane>svg path{-webkit-user-select:none;user-select:none}
+.leaflet-container img.leaflet-image-layer{max-width:none!important;max-height:none!important}
+.leaflet-pane{z-index:400}.leaflet-overlay-pane{z-index:400}.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}
+.leaflet-map-pane canvas{z-index:100}.leaflet-map-pane svg{z-index:200}
+.leaflet-zoom-animated{transform-origin:0 0}
+.leaflet-zoom-anim .leaflet-zoom-animated{transition:transform .25s cubic-bezier(0,0,.25,1)}
+.leaflet-zoom-anim .leaflet-zoom-hide{visibility:hidden}
+.leaflet-pan-anim .leaflet-tile,.leaflet-zoom-anim .leaflet-tile{transition:none}
+.leaflet-interactive{cursor:pointer}
+.leaflet-grab{cursor:grab}.leaflet-dragging .leaflet-grab,.leaflet-dragging .leaflet-grab .leaflet-interactive{cursor:grabbing}
+.leaflet-marker-icon,.leaflet-image-layer{pointer-events:none}
+.leaflet-marker-icon.leaflet-interactive,.leaflet-image-layer.leaflet-interactive,.leaflet-pane>svg path.leaflet-interactive{pointer-events:auto}
+.leaflet-control-container .leaflet-top,.leaflet-control-container .leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}
+.leaflet-bottom{bottom:env(safe-area-inset-bottom,0px)}.leaflet-right{right:max(0px, env(safe-area-inset-right,0px))}
+.leaflet-control{position:relative;z-index:800;pointer-events:auto;float:left;clear:both}
+.leaflet-right .leaflet-control{float:right}
+.leaflet-control-attribution{background:color-mix(in srgb,var(--panel) 80%,transparent);color:var(--muted);font-size:10px;padding:1px 6px;margin:0 56px 0 0;border-radius:6px 6px 0 0}
+.leaflet-control-attribution a{color:var(--muted)}
+.leaflet-tooltip{position:absolute;padding:5px 9px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgb(0 0 0 / .18);font-size:.84rem}
+.leaflet-tooltip b{font-family:var(--mono);font-weight:500;margin-right:4px}
+.leaflet-tooltip-top:before,.leaflet-tooltip-bottom:before,.leaflet-tooltip-left:before,.leaflet-tooltip-right:before{display:none}
+.leaflet-relief{mix-blend-mode:var(--relief-blend,multiply)}
+.leaflet-zoom-box{border:2px dotted var(--accent);background:rgb(255 255 255 / .3)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+button.store{border:0;background:transparent;cursor:pointer;padding:4px 6px;border-radius:8px;font:inherit;font-size:.72rem;color:var(--muted)}
+button.store:hover{background:var(--soft)}
+.store.warn b{color:var(--warn)}
+.row-btns{display:flex;gap:8px;flex-wrap:wrap}
+/* Portions */
+.parts{display:flex;flex-direction:column;gap:10px}
+.part{border:1px solid var(--line);border-radius:10px;padding:8px 10px 2px;background:var(--bg)}
+.part-h{display:flex;align-items:center;gap:8px;font-size:.84rem}
+.part-n{font-weight:800;white-space:nowrap}
+.part-v{font-family:var(--mono);font-size:.72rem;color:var(--muted);flex:1;min-width:0;font-variant-numeric:tabular-nums}
+.part-v b{color:var(--ink);font-weight:500}
+.part-x{border:0;background:transparent;color:var(--muted);font-size:1.25rem;line-height:1;padding:2px 7px;border-radius:6px}
+.part-x:hover{background:var(--soft);color:var(--accent)}
+.range2{position:relative;height:36px}
+.range2 .trk{position:absolute;left:11px;right:11px;top:16px;height:4px;border-radius:2px;background:var(--line)}
+.range2 .fill{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--done)}
+.range2 input{position:absolute;left:0;top:0;width:100%;height:36px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
+.range2 input::-webkit-slider-runnable-track{height:36px;background:none;border:0}
+.range2 input::-moz-range-track{background:none;border:0}
+.range2 input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;width:22px;height:22px;margin-top:7px;border-radius:50%;background:var(--panel);border:3px solid var(--done);box-shadow:0 1px 3px rgb(0 0 0 / .3);cursor:grab}
+.range2 input::-moz-range-thumb{pointer-events:auto;width:16px;height:16px;border-radius:50%;background:var(--panel);border:3px solid var(--done);box-shadow:0 1px 3px rgb(0 0 0 / .3);cursor:grab}
+.range2 input:focus-visible{outline:none}
+.range2 input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--ink);outline-offset:2px}
+.range2 input:focus-visible::-moz-range-thumb{outline:2px solid var(--ink);outline-offset:2px}
+.pf-bands{position:absolute;inset:0;pointer-events:none}
+.pf-bands i{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--done) 14%,transparent);border-inline:1.5px solid color-mix(in srgb,var(--done) 60%,transparent)}
+.gallery button.cloud{display:grid;place-items:center;color:var(--muted);font-size:.7rem}
+.gallery button.cloud::after{content:"Sur le Drive"}
+/* Panneau sauvegarde */
+.sheet{position:fixed;inset:0;z-index:2500;background:rgb(0 0 0 / .38);display:grid;place-items:center;padding:16px}
+.sheet-card{position:relative;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px rgb(0 0 0 / .3);width:min(470px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px;font-size:.92rem}
+.sheet-card h3{font-family:var(--display);font-size:1.35rem;margin:0 28px 0 0}
+.sheet-card h4{margin:0;font-size:.95rem}
+.sheet-card p{margin:0}
+.sheet-card hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+.sheet-card .close{position:absolute;top:8px;right:10px;border:0;background:transparent;font-size:1.6rem;color:var(--muted);line-height:1}
+.sum{display:flex;gap:14px;font-size:.85rem;color:var(--muted)}
+.sum b{color:var(--ink);font-family:var(--mono);font-weight:500}
+.warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side" aria-label="Carnet">
+    <header class="brand">
+      <span class="blaze" aria-hidden="true"><i></i><i></i></span>
+      <div><h1>Carnet des GR</h1><div class="sub">Mes sentiers de grande randonnée</div></div>
+      <button class="store" id="store" type="button" aria-label="Sauvegarde et synchronisation"><b>Chargement…</b></button>
+    </header>
+    <section class="stats" aria-label="Bilan">
+      <div class="stat"><div class="v" id="sGr">0 / 0</div><div class="l" id="sGrL">GR parcourus</div></div>
+      <div class="stat"><div class="v" id="sKm">0 km</div><div class="l">Distance</div></div>
+      <div class="stat"><div class="v" id="sUp">0 m</div><div class="l">Dénivelé +</div></div>
+    </section>
+    <div id="listView" style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <nav class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tabGr" aria-selected="true">GR de France</button>
+        <button class="tab" role="tab" id="tabTr" aria-selected="false">Mes traces GPX</button>
+      </nav>
+      <div class="tools" id="grTools">
+        <input class="search" id="q" type="search" placeholder="Chercher un numéro, un nom, une ville…" autocomplete="off">
+        <div class="chips" id="chips">
+          <button class="chip" data-f="all" aria-pressed="true">Tous</button>
+          <button class="chip" data-f="done" aria-pressed="false">Parcourus</button>
+          <button class="chip" data-f="partial" aria-pressed="false">En partie</button>
+          <button class="chip" data-f="todo" aria-pressed="false">À faire</button>
+        </div>
+      </div>
+      <div class="tools" id="trTools" hidden>
+        <button class="btn primary" id="importBtn2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>Importer des fichiers GPX</button>
+        <div class="note">Tu peux aussi glisser tes fichiers .gpx directement sur la carte.</div>
+      </div>
+      <div class="scroll"><ol class="list" id="list"></ol></div>
+    </div>
+    <div class="scroll" id="detailView" hidden><div class="detail" id="detail"></div></div>
+  </aside>
+
+  <main class="mapwrap" id="mapwrap">
+    <div id="map" aria-label="Carte des GR de France"></div>
+    <div class="legend" id="legend"></div>
+    <div class="mctl">
+      <button class="mbtn" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>GPX</button>
+      <button class="mbtn" id="customBtn" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Personnaliser</button>
+    </div>
+    <div class="zoom"><button id="zin" aria-label="Zoomer">+</button><button id="zout" aria-label="Dézoomer">−</button><button id="zfr" aria-label="Voir toute la France" title="Toute la France"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div>
+    <div class="pop" id="custom" hidden></div>
+  </main>
+</div>
+<div class="lightbox" id="lightbox" hidden></div>
+<div class="sheet" id="sync" hidden></div>
+<input type="file" id="gpxInput" accept=".gpx,application/gpx+xml" multiple hidden>
+<input type="file" id="photoInput" accept="image/*" multiple hidden>
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="data.js"></script>
+<script src="config.js"></script>
+<script>
+"use strict";
+/* ===================== Outils ===================== */
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtKm = m => (m/1000).toLocaleString("fr-FR",{maximumFractionDigits: m<10000?1:0}) + " km";
+const fmtM = m => m==null||isNaN(m) ? "—" : Math.round(m).toLocaleString("fr-FR") + " m";
+const natKey = k => { const m = k.match(/(\d+)\s*([A-Z]?)/i); return m ? (+m[1])*100 + (m[2] ? m[2].toUpperCase().charCodeAt(0)-64 : 0) : 99999; };
+const keyId = k => k.replace(/\s+/g,"-");
+let toastT;
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, 3600); }
+function hav(a,b){ const R=6371000, r=Math.PI/180, dLa=(b[0]-a[0])*r, dLo=(b[1]-a[1])*r; const h=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+function decodePoly(str, prec){ const f=Math.pow(10,prec); const lines=[]; for(const s of str.split(" ")){ if(!s) continue; let i=0,lat=0,lng=0; const pts=[]; while(i<s.length){ let b,sh=0,r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lat+= (r&1)?~(r>>1):(r>>1); sh=0;r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lng+= (r&1)?~(r>>1):(r>>1); pts.push([lat/f,lng/f]); } lines.push(pts); } return lines; }
+function encodePoly(lines, prec){ const f=Math.pow(10,prec); const e=v=>{ v=v<0?~(v<<1):(v<<1); let o=""; while(v>=0x20){ o+=String.fromCharCode((0x20|(v&0x1f))+63); v>>=5; } return o+String.fromCharCode(v+63); }; return lines.map(l=>{ let pa=0,po=0,o=""; for(const [a,b] of l){ const ia=Math.round(a*f), ib=Math.round(b*f); o+=e(ia-pa)+e(ib-po); pa=ia; po=ib; } return o; }).join(" "); }
+function simplify(pts, tol){ if(pts.length<3) return pts; const k=Math.cos(pts[0][0]*Math.PI/180); const keep=new Uint8Array(pts.length); keep[0]=keep[pts.length-1]=1; const st=[[0,pts.length-1]]; const t2=tol*tol;
+  while(st.length){ const [a,b]=st.pop(); const ax=pts[a][1]*k, ay=pts[a][0], bx=pts[b][1]*k, by=pts[b][0]; const dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy; let md=0, mi=-1;
+    for(let i=a+1;i<b;i++){ const px=pts[i][1]*k, py=pts[i][0]; let t=L?((px-ax)*dx+(py-ay)*dy)/L:0; t=Math.max(0,Math.min(1,t)); const ex=ax+t*dx-px, ey=ay+t*dy-py, d=ex*ex+ey*ey; if(d>md){md=d;mi=i;} }
+    if(md>t2){ keep[mi]=1; st.push([a,mi],[mi,b]); } }
+  return pts.filter((_,i)=>keep[i]); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+
+/* ===================== Catalogue des GR ===================== */
+const GRS = GR_DATA.map(g => ({ key:g.k, name:g.n||"", dist:g.d, up:g.u, dn:g.w, min:g.mi, max:g.ma, prof:g.p, enc:g.e, url:g.url, osm:g.o, loop:g.l, cities:g.c||"" }))
+  .sort((a,b)=>natKey(a.key)-natKey(b.key) || a.key.localeCompare(b.key));
+const GRBY = Object.fromEntries(GRS.map(g=>[g.key,g]));
+
+/* ===================== Préférences & styles ===================== */
+const STYLES = {
+  papier:{ label:"Papier", sea:"#c4d4da", land:"#f2f1ea", nb:"#e2e2da", dep:"#cdc8b9", reg:"#a9a392", ink:"#3a3a32", halo:"#f6f5ef", seaink:"#56707b", todo:"#55606b", relief:"shade", blend:"multiply", shadeTint:[70,62,50], uiDark:false },
+  topo:{ label:"Topo", sea:"#a9cde2", land:"#e8efdc", nb:"#dfe3d6", dep:"#b9c4a8", reg:"#8e9a7c", ink:"#2c3a2a", halo:"#f3f6ec", seaink:"#2f6a8a", todo:"#46553f", relief:"hypso", blend:"normal", uiDark:false },
+  nuit:{ label:"Nuit", sea:"#0b1620", land:"#1a2420", nb:"#141c19", dep:"#2c3a33", reg:"#40524a", ink:"#c9d6cf", halo:"#0d1512", seaink:"#5f8aa3", todo:"#93a89e", relief:"shade", blend:"screen", shadeTint:[150,170,160], uiDark:true },
+  encre:{ label:"Encre", sea:"#ffffff", land:"#ffffff", nb:"#f4f4f2", dep:"#d9d9d4", reg:"#9b9b95", ink:"#1b1b1b", halo:"#ffffff", seaink:"#8a8a8a", todo:"#6c6c67", relief:"shade", blend:"multiply", shadeTint:[40,40,40], uiDark:false },
+};
+const DONE_SWATCHES = ["#d7263d","#f26a1b","#e9b000","#2f9e44","#1c7ed6","#7b3fe4","#e64980"];
+const DEFAULT_PREFS = { style:"auto", done:"#d7263d", track:"#1c7ed6", width:3, relief:0.85, showTodo:true, showDeps:true, showLabels:true, todoColor:"" };
+let prefs = {...DEFAULT_PREFS};
+try { const p = JSON.parse(localStorage.getItem("carnet-gr-prefs")||"null"); if(p) prefs={...prefs,...p}; } catch(e){}
+function curStyleKey(){ if(prefs.style!=="auto") return prefs.style; const t=document.documentElement.getAttribute("data-theme"); const dark = t ? t==="dark" : matchMedia("(prefers-color-scheme: dark)").matches; return dark?"nuit":"papier"; }
+function S(){ return STYLES[curStyleKey()]; }
+
+/* ===================== Stockage : cet appareil + Google Drive ===================== */
+/* Tout est d'abord enregistré dans le navigateur (IndexedDB), puis recopié dans le dossier
+   « Carnet des GR » du Google Drive choisi : carnet.json (statuts, notes, portions, traces…),
+   photos/ (JPEG) et traces/ (GPX). Chaque appareil fusionne champ par champ ce qu'il trouve
+   sur le Drive : le plus récent l'emporte. */
+const CFG = Object.assign({ googleClientId:"" }, window.CARNET_CONFIG||{});
+const DRIVE = "https://www.googleapis.com/drive/v3/files", UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+const state = { grs:{}, tracks:{}, mode:"local", readOnly:false };
+let doc = { v:2, grs:{}, tracks:{}, prefs:null, pu:0, files:{} };
+
+function stable(v){ if(Array.isArray(v)) return "["+v.map(stable).join(",")+"]"; if(v&&typeof v==="object") return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")+"}"; return JSON.stringify(v===undefined?null:v); }
+function mergeRec(x,y){ if(!x) return y; if(!y) return x;
+  const tx=x._t||{}, ty=y._t||{}, out={}, t={};
+  for(const k of new Set([...Object.keys(x),...Object.keys(y)])){ if(k==="_t"||k==="u") continue;
+    const a=tx[k]??x.u??0, b=ty[k]??y.u??0;
+    if(k in x && (!(k in y) || a>=b)){ out[k]=x[k]; t[k]=a; } else { out[k]=y[k]; t[k]=b; } }
+  out._t=t; out.u=Math.max(x.u||0,y.u||0); return out; }
+function mergeDocs(a,b){ const out={ v:2, grs:{}, tracks:{}, files:{}, prefs:null, pu:0 };
+  for(const c of ["grs","tracks"]){ const A=a[c]||{}, B=b[c]||{}; for(const k of new Set([...Object.keys(A),...Object.keys(B)])) out[c][k]=mergeRec(A[k],B[k]); }
+  const fa=a.files||{}, fb=b.files||{}; for(const k of new Set([...Object.keys(fa),...Object.keys(fb)])){ const x=fa[k], y=fb[k]; out.files[k]=(x==="x"||y==="x")?"x":(x||y||""); }
+  if((b.pu||0)>(a.pu||0)){ out.prefs=b.prefs; out.pu=b.pu; } else { out.prefs=a.prefs||null; out.pu=a.pu||0; }
+  return out; }
+
+const Store = {
+  idb:null, urlCache:new Map(), token:null, tokenExp:0, folder:null, sub:{}, remote:{}, syncing:false, dirty:false, lastSync:0, err:"", pending:0,
+  async init(){
+    await this.openIdb();
+    const saved=await this.idbGet("kv","doc"); if(saved) doc=mergeDocs(doc,saved);
+    this.remote=(await this.idbGet("kv","remote"))||{}; this.lastSync=this.remote.at||0; this.dirty=!!(await this.idbGet("kv","dirty"));
+    if(doc.prefs) prefs={...DEFAULT_PREFS,...doc.prefs};
+    this.derive(); applyStyle(); syncTrackLayers(); renderAll();
+    try{ const tk=JSON.parse(localStorage.getItem("carnet-token")||"null"); if(tk&&tk.e>Date.now()){ this.token=tk.t; this.tokenExp=tk.e; } }catch(e){}
+    if(this.driveOn()){ state.mode="drive"; this.loadGis().catch(()=>{}); }
+    this.pending=Object.keys(await this.idbAll("pending")).length;
+    renderStoreBadge(); this.sync();
+    setInterval(()=>{ if(document.visibilityState==="visible") this.sync(); }, 45000);
+    document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") this.sync(); });
+    addEventListener("online",()=>this.sync());
+  },
+  derive(){ state.grs=doc.grs; state.tracks=Object.fromEntries(Object.entries(doc.tracks).filter(([,t])=>t&&!t.deleted)); },
+  clientId(){ let ls=""; try{ ls=localStorage.getItem("carnet-client-id")||""; }catch(e){} return (CFG.googleClientId||ls||"").trim(); },
+  driveOn(){ try{ return !!this.clientId() && localStorage.getItem("carnet-drive")==="1"; }catch(e){ return false; } },
+  /* ---- base locale ---- */
+  openIdb(){ return new Promise(res=>{ try{ const r=indexedDB.open("carnet-gr",2); r.onupgradeneeded=()=>{ const d=r.result; ["kv","blobs","pending"].forEach(n=>{ if(!d.objectStoreNames.contains(n)) d.createObjectStore(n); }); }; r.onsuccess=()=>{ this.idb=r.result; res(); }; r.onerror=()=>res(); }catch(e){ res(); } }); },
+  idbAll(store){ return new Promise(res=>{ if(!this.idb) return res({}); const out={}; const rq=this.idb.transaction(store).objectStore(store).openCursor(); rq.onsuccess=()=>{ const c=rq.result; if(c){ out[c.key]=c.value; c.continue(); } else res(out); }; rq.onerror=()=>res(out); }); },
+  idbPut(store,key,val){ return new Promise((res,rej)=>{ if(!this.idb) return rej(new Error("Stockage indisponible")); const tx=this.idb.transaction(store,"readwrite"); tx.objectStore(store).put(val,key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); },
+  idbDel(store,key){ return new Promise(res=>{ if(!this.idb) return res(); const tx=this.idb.transaction(store,"readwrite"); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>res(); }); },
+  idbGet(store,key){ return new Promise(res=>{ if(!this.idb) return res(null); const rq=this.idb.transaction(store).objectStore(store).get(key); rq.onsuccess=()=>res(rq.result??null); rq.onerror=()=>res(null); }); },
+  persist(){ clearTimeout(this._pt); this._pt=setTimeout(()=>{ this.idbPut("kv","doc",doc).catch(()=>toast("Enregistrement impossible sur cet appareil.")); this.idbPut("kv","dirty",this.dirty).catch(()=>{}); },250); },
+  touch(){ this.dirty=true; this.persist(); this.schedule(); },
+  /* ---- écritures ---- */
+  async save(coll,id,data){
+    const prev=doc[coll][id]||{}, now=Date.now(), t={...(prev._t||{})};
+    for(const k of Object.keys(data)){ if(k==="_t"||k==="u") continue; if(stable(data[k])!==stable(prev[k])) t[k]=now; }
+    doc[coll][id]={...data,_t:t,u:now}; this.derive(); this.touch();
+  },
+  async remove(coll,id){ const now=Date.now(); doc[coll][id]={deleted:true,u:now,_t:{deleted:now}}; this.derive(); this.touch(); },
+  async savePrefs(){ try{ localStorage.setItem("carnet-gr-prefs",JSON.stringify(prefs)); }catch(e){} doc.prefs={...prefs}; doc.pu=Date.now(); this.touch(); },
+  async putBlob(blob,type,dest){ // dest : { path:["photos","GR 20 – …"], name:"IMG_1234.jpg", drop:true } (drop = ne pas garder de copie locale une fois envoyé)
+    const id=(dest?.drop?"o_":type==="image/jpeg"?"p_":"g_")+uid();
+    await this.idbPut("blobs",id,blob); await this.idbPut("pending",id,{type:type||blob.type||"application/octet-stream",...(dest||{})}); doc.files[id]=""; this.pending++; this.touch(); return id;
+  },
+  async delBlob(id){ if(!id) return; const fid=doc.files[id];
+    await this.idbDel("blobs",id); await this.idbDel("pending",id); this.urlCache.delete(id);
+    if(fid&&fid!=="x"){ const tr=(await this.idbGet("kv","trash"))||[]; tr.push(fid); await this.idbPut("kv","trash",tr); }
+    if(id in doc.files){ doc.files[id]="x"; this.touch(); } },
+  async url(id){ if(!id) return ""; if(this.urlCache.has(id)) return this.urlCache.get(id);
+    let b=await this.idbGet("blobs",id);
+    if(!b){ const fid=doc.files[id]; if(fid&&fid!=="x"&&this.hasToken()){ try{ const r=await this.api("GET",`${DRIVE}/${fid}?alt=media`); b=await r.blob(); await this.idbPut("blobs",id,b).catch(()=>{}); }catch(e){} } }
+    if(!b) return ""; const u=URL.createObjectURL(b); this.urlCache.set(id,u); return u; },
+  /* ---- Google ---- */
+  hasToken(){ return !!this.token && Date.now()<this.tokenExp; },
+  loadGis(){ return this._gis || (this._gis=new Promise((res,rej)=>{ if(window.google?.accounts?.oauth2) return res(); const s=document.createElement("script"); s.src="https://accounts.google.com/gsi/client"; s.async=true; s.onload=()=>res(); s.onerror=()=>{ this._gis=null; rej(new Error("Impossible de joindre Google (connexion internet ?)")); }; document.head.appendChild(s); })); },
+  connect(pick){ // à appeler depuis un clic (fenêtre Google)
+    return new Promise(async(res,rej)=>{
+      const cid=this.clientId(); if(!cid) return rej(new Error("Identifiant Google manquant : voir le guide d'installation."));
+      try{ await this.loadGis(); }catch(e){ return rej(e); }
+      const tc=google.accounts.oauth2.initTokenClient({ client_id:cid, scope:"https://www.googleapis.com/auth/drive.file",
+        callback:r=>{ if(r.error) return rej(new Error(r.error_description||r.error)); this.token=r.access_token; this.tokenExp=Date.now()+(+r.expires_in-120)*1000;
+          try{ localStorage.setItem("carnet-token",JSON.stringify({t:this.token,e:this.tokenExp})); localStorage.setItem("carnet-drive","1"); }catch(e){}
+          state.mode="drive"; this.err=""; res(); },
+        error_callback:e=>rej(new Error(e?.type==="popup_closed"?"Fenêtre Google fermée.":e?.type==="popup_failed_to_open"?"La fenêtre Google a été bloquée : autorise les fenêtres pour ce site.":"Connexion annulée.")) });
+      tc.requestAccessToken({ prompt: pick ? "select_account consent" : "" });
+    }); },
+  disconnect(){ try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
+  async api(method,url,body,headers){ const r=await fetch(url,{method,body,headers:{Authorization:"Bearer "+this.token,...(headers||{})}});
+    if(!r.ok){ const e=new Error(r.status===401?"Session Google expirée":r.status===403?"Accès refusé par Google ("+r.status+")":"Erreur Google Drive ("+r.status+")"); e.status=r.status; if(r.status===401){ this.token=null; this.tokenExp=0; } throw e; } return r; },
+  async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
+  async mkdir(name,parent){ const r=await this.api("POST",`${DRIVE}?fields=id`,JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})}),{"Content-Type":"application/json"}); return (await r.json()).id; },
+  async upload(name,parent,blob){ const fd=new FormData(); fd.append("metadata",new Blob([JSON.stringify({name,parents:[parent]})],{type:"application/json"})); fd.append("file",blob,name);
+    const r=await this.api("POST",`${UPLOAD}?uploadType=multipart&fields=id,version`,fd); return r.json(); },
+  async folders(){ if(this.folder) return;
+    const root=(await this.list(`mimeType='application/vnd.google-apps.folder' and trashed=false and name='Carnet des GR' and 'root' in parents`))[0];
+    this.folder=root?root.id:await this.mkdir("Carnet des GR"); this.paths={}; },
+  async ensurePath(path){ let parent=this.folder, key="";
+    for(const seg of path){ key+="/"+seg; if(this.paths[key]){ parent=this.paths[key]; continue; }
+      const q=seg.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+      const f=(await this.list(`mimeType='application/vnd.google-apps.folder' and trashed=false and name='${q}' and '${parent}' in parents`))[0];
+      parent=this.paths[key]=f?f.id:await this.mkdir(seg,parent); }
+    return parent; },
+  async uploadAny(name,parent,blob,type){ if(blob.size<4.5e6) return this.upload(name,parent,blob);
+    const r=await this.api("POST",`${UPLOAD}?uploadType=resumable&fields=id,version`,JSON.stringify({name,parents:[parent]}),{"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":type||blob.type||"application/octet-stream","X-Upload-Content-Length":String(blob.size)});
+    const loc=r.headers.get("Location"); if(!loc) throw new Error("Envoi impossible vers le Drive");
+    const r2=await fetch(loc,{method:"PUT",body:blob,headers:{"Content-Type":type||blob.type||"application/octet-stream"}});
+    if(!r2.ok){ const e=new Error("Envoi interrompu ("+r2.status+")"); e.status=r2.status; throw e; } return r2.json(); },
+  schedule(){ clearTimeout(this._st); this._st=setTimeout(()=>this.sync(),2500); renderStoreBadge(); },
+  async sync(force){
+    if(state.mode!=="drive"||this.syncing){ renderStoreBadge(); return; }
+    if(!this.hasToken()||!navigator.onLine){ renderStoreBadge(); return; }
+    this.syncing=true; renderStoreBadge();
+    try{
+      await this.folders();
+      // 1. photos et GPX en attente d'envoi
+      const pend=await this.idbAll("pending");
+      for(const [id,p] of Object.entries(pend)){ const blob=await this.idbGet("blobs",id);
+        if(!blob||doc.files[id]==="x"){ await this.idbDel("pending",id); continue; }
+        const img=p.type==="image/jpeg"; const parent=await this.ensurePath(p.path||[img?"aperçus":"traces"]);
+        const r=await this.uploadAny(p.name||(id+(img?".jpg":".gpx")), parent, blob, p.type);
+        doc.files[id]=r.id; this.dirty=true; await this.idbDel("pending",id); if(p.drop){ await this.idbDel("blobs",id); this.urlCache.delete(id); }
+        this.pending=Math.max(0,this.pending-1); this.persist(); renderStoreBadge(); }
+      // 2. fichiers supprimés → corbeille du Drive (récupérables 30 jours)
+      const tr=(await this.idbGet("kv","trash"))||[]; for(const fid of tr){ try{ await this.api("PATCH",`${DRIVE}/${fid}`,JSON.stringify({trashed:true}),{"Content-Type":"application/json"}); }catch(e){ if(e.status===401) throw e; } } if(tr.length) await this.idbPut("kv","trash",[]);
+      // 3. carnet.json
+      const f=(await this.list(`name='carnet.json' and '${this.folder}' in parents and trashed=false`))[0];
+      let remoteDoc=null;
+      if(f&&(force||String(f.version)!==String(this.remote.version))){ const r=await this.api("GET",`${DRIVE}/${f.id}?alt=media`); try{ remoteDoc=await r.json(); }catch(e){ remoteDoc=null; } }
+      if(remoteDoc&&remoteDoc.v){ const before=stable(doc); doc=mergeDocs(doc,remoteDoc);
+        if(stable(doc)!==before){ if(doc.prefs){ prefs={...DEFAULT_PREFS,...doc.prefs}; try{ localStorage.setItem("carnet-gr-prefs",JSON.stringify(prefs)); }catch(e){} } this.derive(); applyStyle(); syncTrackLayers(); renderAll(); }
+        this.dirty = this.dirty || stable(doc)!==stable(remoteDoc); }
+      const body=new Blob([JSON.stringify(doc)],{type:"application/json"});
+      if(!f){ const r=await this.upload("carnet.json",this.folder,body); this.remote={id:r.id,version:r.version}; this.dirty=false; }
+      else if(this.dirty){ const r=await this.api("PATCH",`${UPLOAD}/${f.id}?uploadType=media&fields=id,version`,body,{"Content-Type":"application/json"}); const j=await r.json(); this.remote={id:j.id,version:j.version}; this.dirty=false; }
+      else this.remote={id:f.id,version:f.version};
+      this.lastSync=Date.now(); this.remote.at=this.lastSync; this.err="";
+      await this.idbPut("kv","remote",this.remote); this.persist();
+    }catch(e){ this.err=e.status===401?"auth":(e.message||"Erreur"); if(e.status===401) this.folder=null; }
+    this.syncing=false; renderStoreBadge(); if(!$("#sync").hidden) renderSyncPanel();
+  },
+  /* ---- sauvegarde manuelle ---- */
+  async exportFile(withPhotos){
+    const out={ app:"carnet-gr", format:2, exported:new Date().toISOString(), doc, blobs:{} };
+    if(withPhotos){ const ids=Object.keys(doc.files).filter(k=>doc.files[k]!=="x"&&!k.startsWith("o_")); let n=0;
+      for(const id of ids){ let b=await this.idbGet("blobs",id); if(!b&&this.hasToken()){ try{ await this.url(id); b=await this.idbGet("blobs",id); }catch(e){} } if(b){ out.blobs[id]={type:b.type||"image/jpeg", data:await blobToB64(b)}; n++; } } }
+    const blob=new Blob([JSON.stringify(out)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`carnet-gr-${new Date().toISOString().slice(0,10)}.json`; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },2000); },
+  async importFile(file){
+    const j=JSON.parse(await file.text()); if(j.app!=="carnet-gr"||!j.doc) throw new Error("Ce fichier n'est pas une sauvegarde du Carnet des GR.");
+    for(const [id,b] of Object.entries(j.blobs||{})){ const blob=b64ToBlob(b.data,b.type); await this.idbPut("blobs",id,blob); if(!j.doc.files?.[id]||j.doc.files[id]===""){ await this.idbPut("pending",id,{type:b.type}); this.pending++; } }
+    doc=mergeDocs(doc,j.doc); if(doc.prefs) prefs={...DEFAULT_PREFS,...doc.prefs}; this.derive(); applyStyle(); syncTrackLayers(); renderAll(); this.touch(); },
+};
+function blobToB64(b){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.readAsDataURL(b); }); }
+function b64ToBlob(s,type){ const bin=atob(s); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return new Blob([u],{type}); }
+
+function renderStoreBadge(){ const el=$("#store"); if(!el) return; const S_=Store; let h, cls="";
+  if(state.mode!=="drive") h="<b>Sur cet appareil</b>Sauvegarde ›";
+  else if(S_.syncing) h=S_.pending?`<b>Envoi…</b>${S_.pending} fichier${S_.pending>1?"s":""}`:"<b>Synchro…</b>Google Drive";
+  else if(!S_.hasToken()){ h="<b>Drive en pause</b>reconnecter ›"; cls="warn"; }
+  else if(!navigator.onLine){ h="<b>Hors ligne</b>"+(S_.dirty||S_.pending?"en attente":"à jour"); }
+  else if(S_.err){ h="<b>Synchro en échec</b>détails ›"; cls="warn"; }
+  else h=`<b>Drive ✓</b>${S_.lastSync?"à "+new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):"connecté"}`;
+  el.innerHTML=h; el.className="store "+cls; }
+
+const grRec = k => state.grs[keyId(k)] || {};
+const grStatus = k => grRec(k).status || "todo";
+
+/* ===================== Carte ===================== */
+const map = L.map("map",{ zoomControl:false, preferCanvas:true, minZoom:5, maxZoom:15, zoomSnap:0.25, zoomDelta:0.5, wheelPxPerZoomLevel:90, maxBounds:[[37.5,-14],[54.5,18]], maxBoundsViscosity:0.8, attributionControl:true });
+map.attributionControl.setPrefix(false).addAttribution('Tracés © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> via Waymarked Trails · Altitudes © IGN');
+const FR_BOUNDS = L.latLngBounds([[41.3,-5.2],[51.15,9.6]]);
+map.fitBounds(FR_BOUNDS,{padding:[10,10]});
+["base","relief","borders","grs","tracks","labels","photos"].forEach((n,i)=>{ const p=map.createPane(n); p.style.zIndex=200+i*50; if(n==="labels"||n==="relief") p.style.pointerEvents="none"; });
+map.getPane("relief").classList.add("leaflet-relief");
+const rBase = L.canvas({pane:"base", padding:0.4});
+const rBorders = L.canvas({pane:"borders", padding:0.4});
+const rGrs = L.canvas({pane:"grs", tolerance:7, padding:0.4});
+const rTracks = L.canvas({pane:"tracks", tolerance:7, padding:0.4});
+
+function decRings(rings){ return rings.map(flat=>{ const out=[]; let x=0,y=0; for(let i=0;i<flat.length;i+=2){ x+=flat[i]; y+=flat[i+1]; out.push([y/1000,x/1000]); } return out; }); }
+const nbLayer = L.layerGroup(BASE.nb.map(c=>L.polygon(decRings(c.r),{renderer:rBase, stroke:true, weight:0.6, interactive:false}))).addTo(map);
+const frLayer = L.layerGroup(BASE.deps.map(d=>L.polygon(decRings(d.r),{renderer:rBase, stroke:false, interactive:false}))).addTo(map);
+const depLayer = L.layerGroup(BASE.deps.map(d=>L.polygon(decRings(d.r),{renderer:rBorders, fill:false, weight:0.6, interactive:false}))).addTo(map);
+const regLayer = L.layerGroup(BASE.regs.map(d=>L.polygon(decRings(d.r),{renderer:rBorders, fill:false, weight:1.2, interactive:false}))).addTo(map);
+
+/* Relief ombré calculé à partir de la grille d'altitudes */
+let demGrid=null, reliefLayer=null;
+async function loadDem(){
+  const bin = Uint8Array.from(atob(DEM.z), c=>c.charCodeAt(0));
+  let raw;
+  try { const ds = new Blob([bin]).stream().pipeThrough(new DecompressionStream("deflate-raw")); raw = new Uint8Array(await new Response(ds).arrayBuffer()); } catch(e){ return; }
+  const {W,H}=DEM; const v=new Uint8Array(W*H);
+  for(let j=0;j<H;j++){ let p=0; for(let i=0;i<W;i++){ p=(p+raw[j*W+i])&255; v[j*W+i]=p; } }
+  const h=new Float32Array(W*H); const nd=new Uint8Array(W*H);
+  for(let i=0;i<v.length;i++){ if(v[i]===0){ nd[i]=1; h[i]=0; } else { const t=(v[i]-1)/254; h[i]=t*t*4810; } }
+  demGrid={W,H,h,nd}; drawRelief();
+}
+function hypso(e){ const stops=[[0,[198,219,170]],[150,[214,226,176]],[400,[226,224,170]],[800,[220,200,150]],[1300,[200,170,130]],[1900,[176,150,128]],[2500,[200,196,192]],[3200,[240,240,240]]]; for(let i=1;i<stops.length;i++){ if(e<=stops[i][0]){ const [e0,c0]=stops[i-1],[e1,c1]=stops[i]; const t=(e-e0)/(e1-e0); return c0.map((c,k)=>c+(c1[k]-c)*t); } } return stops[stops.length-1][1]; }
+function drawRelief(){
+  if(!demGrid) return; const st=S(); const {W,H,h,nd}=demGrid; const U=3, CW=W*U, CH=H*U;
+  const cv=document.createElement("canvas"); cv.width=CW; cv.height=CH; const ctx=cv.getContext("2d"); const img=ctx.createImageData(CW,CH); const D=img.data;
+  const cell=(DEM.X1-DEM.X0)/W; const zf=4.2;
+  const az=315*Math.PI/180, alt=42*Math.PI/180; const lx=Math.cos(alt)*Math.sin(az), ly=Math.cos(alt)*Math.cos(az), lz=Math.sin(alt);
+  const H_=(i,j)=>{ i=Math.max(0,Math.min(W-1,i)); j=Math.max(0,Math.min(H-1,j)); return h[j*W+i]; };
+  const k=prefs.relief;
+  for(let y=0;y<CH;y++){ const gy=(y+0.5)/U-0.5; const j0=Math.floor(gy), fy=gy-j0;
+    for(let x=0;x<CW;x++){ const gx=(x+0.5)/U-0.5; const i0=Math.floor(gx), fx=gx-i0;
+      const ii=Math.max(0,Math.min(W-1,Math.round(gx))), jj=Math.max(0,Math.min(H-1,Math.round(gy)));
+      const o=(y*CW+x)*4; if(nd[jj*W+ii]){ D[o+3]=0; continue; }
+      const bil=(a,b)=>{ const h00=H_(a,b),h10=H_(a+1,b),h01=H_(a,b+1),h11=H_(a+1,b+1); return h00*(1-fx)*(1-fy)+h10*fx*(1-fy)+h01*(1-fx)*fy+h11*fx*fy; };
+      const e=bil(i0,j0);
+      const dzdx=(bil(i0+1,j0)-bil(i0-1,j0))/(2*cell)*zf, dzdy=(bil(i0,j0-1)-bil(i0,j0+1))/(2*cell)*zf;
+      const nx=-dzdx, ny=-dzdy, nz=1, nl=Math.hypot(nx,ny,nz);
+      let sh=(nx*lx+ny*ly+nz*lz)/nl; // 0..1
+      if(st.relief==="hypso"){ const c=hypso(e); const m=0.55+0.6*(sh-0.62)*k*1.6; D[o]=c[0]*m; D[o+1]=c[1]*m; D[o+2]=c[2]*m; D[o+3]=255; }
+      else if(st.blend==="screen"){ const lit=Math.max(0,sh-0.66)*2.6; const dark=Math.max(0,0.66-sh)*1.6; const t=st.shadeTint; D[o]=t[0]; D[o+1]=t[1]; D[o+2]=t[2]; D[o+3]=Math.min(255,(lit*150+dark*0)*k); }
+      else { const dark=Math.max(0,0.70-sh)*1.55 + Math.min(e/4800,1)*0.10; const t=st.shadeTint; D[o]=255-(255-t[0])*Math.min(1,dark*k*1.4); D[o+1]=255-(255-t[1])*Math.min(1,dark*k*1.4); D[o+2]=255-(255-t[2])*Math.min(1,dark*k*1.4); D[o+3]=255; }
+    } }
+  ctx.putImageData(img,0,0);
+  // ne garder le relief que sur la France
+  const proj=(lat,lng)=>{ const p=L.Projection.SphericalMercator.project(L.latLng(lat,lng)); return [(p.x-DEM.X0)/(DEM.X1-DEM.X0)*CW, (DEM.Y1-p.y)/(DEM.Y1-DEM.Y0)*CH]; };
+  ctx.globalCompositeOperation="destination-in"; ctx.beginPath();
+  for(const d of BASE.deps) for(const ring of decRings(d.r)){ ring.forEach(([la,lo],i)=>{ const [px,py]=proj(la,lo); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }); ctx.closePath(); }
+  ctx.fillStyle="#000"; ctx.fill();
+  const sw=L.Projection.SphericalMercator.unproject(L.point(DEM.X0,DEM.Y0)), ne=L.Projection.SphericalMercator.unproject(L.point(DEM.X1,DEM.Y1));
+  cv.toBlob(b=>{ const url=URL.createObjectURL(b); if(reliefLayer){ const old=reliefLayer._url; reliefLayer.setUrl(url); setTimeout(()=>URL.revokeObjectURL(old),2000); } else { reliefLayer=L.imageOverlay(url, L.latLngBounds(sw,ne), {pane:"relief", interactive:false}).addTo(map); reliefFade(); } });
+}
+
+/* Étiquettes */
+const CITIES=[["Paris",48.857,2.352,1],["Lyon",45.764,4.836,1],["Marseille",43.296,5.37,1],["Toulouse",43.605,1.444,1],["Bordeaux",44.838,-0.579,1],["Nantes",47.218,-1.554,1],["Lille",50.629,3.057,1],["Strasbourg",48.573,7.752,1],["Montpellier",43.611,3.877,1],["Rennes",48.117,-1.678,1],["Nice",43.71,7.262,1],["Grenoble",45.188,5.724,0],["Clermont-Ferrand",45.778,3.087,0],["Dijon",47.322,5.041,0],["Brest",48.39,-4.486,0],["Limoges",45.834,1.261,0],["Tours",47.394,0.685,0],["Orléans",47.903,1.909,0],["Rouen",49.443,1.099,0],["Caen",49.183,-0.371,0],["Reims",49.258,4.032,0],["Metz",49.119,6.176,0],["Besançon",47.238,6.024,0],["Perpignan",42.699,2.895,0],["Pau",43.295,-0.371,0],["Ajaccio",41.919,8.738,0],["Bastia",42.697,9.45,0],["Poitiers",46.58,0.34,0],["La Rochelle",46.16,-1.151,0],["Le Puy-en-Velay",45.043,3.885,0],["Chamonix",45.924,6.87,0],["Annecy",45.899,6.129,0],["Avignon",43.949,4.806,0],["Le Mans",48.006,0.199,0],["Amiens",49.894,2.296,0],["Nancy",48.692,6.184,0],["Bayonne",43.493,-1.475,0],["Quimper",47.996,-4.102,0],["Rodez",44.35,2.575,0],["Gap",44.559,6.079,0]];
+const MASS=[["Alpes",45.35,6.55],["Pyrénées",42.82,0.6],["Massif central",45.2,2.85],["Vosges",48.1,6.95],["Jura",46.65,5.95],["Cévennes",44.2,3.75],["Morvan",47.15,4.05],["Corse",42.15,9.05],["Landes",44.2,-0.75],["Armorique",48.3,-3.4]];
+const SEAS=[["Manche",50.05,-1.6],["Océan Atlantique",46.0,-3.6],["Mer Méditerranée",42.6,5.1],["Mer du Nord",51.45,2.4],["Golfe de Gascogne",44.6,-2.6]];
+const LANDS=[["Espagne",41.6,-1.2],["Italie",44.9,8.4],["Suisse",46.75,7.6],["Allemagne",49.6,8.3],["Belgique",50.55,4.4],["Royaume-Uni",51.0,-0.8],["Luxembourg",49.75,6.12],["Andorre",42.54,1.56]];
+const lbl=(cls,txt,lat,lng)=>L.marker([lat,lng],{pane:"labels",interactive:false,keyboard:false,icon:L.divIcon({className:"",html:`<div class="lbl ${cls}">${esc(txt)}</div>`,iconSize:[0,0]})});
+const bigCities=L.layerGroup(CITIES.filter(c=>c[3]).map(c=>lbl("city big",c[0],c[1],c[2])));
+const smallCities=L.layerGroup(CITIES.filter(c=>!c[3]).map(c=>lbl("city",c[0],c[1],c[2])));
+const massLayer=L.layerGroup(MASS.map(m=>lbl("mass",m[0],m[1],m[2])));
+const seaLayer=L.layerGroup([...SEAS.map(m=>lbl("sea",m[0],m[1],m[2])),...LANDS.map(m=>lbl("land",m[0],m[1],m[2]))]);
+function updateLabels(){ const z=map.getZoom(); const on=prefs.showLabels;
+  [[bigCities,on],[smallCities,on&&z>=6.25],[massLayer,on&&z<9],[seaLayer,on]].forEach(([l,v])=>{ if(v&&!map.hasLayer(l)) l.addTo(map); if(!v&&map.hasLayer(l)) map.removeLayer(l); }); }
+map.on("zoomend",updateLabels);
+function reliefFade(){ if(!reliefLayer) return; const z=map.getZoom(); reliefLayer.setOpacity(z<=8?1:Math.max(0.3,1-(z-8)*0.28)); }
+map.on("zoomend",reliefFade);
+
+/* Couches GR */
+const grLayers={};
+let selected=null; // {type:'gr'|'track', key}
+for(const g of GRS){
+  const ll = decodePoly(g.enc,4);
+  const halo = L.polyline(ll,{renderer:rGrs, interactive:false, lineCap:"round", lineJoin:"round"});
+  const core = L.polyline(ll,{renderer:rGrs, lineCap:"round", lineJoin:"round"});
+  core.bindTooltip(`<b>${esc(g.key)}</b>${esc(g.name)}`,{sticky:true,direction:"top",offset:[0,-8]});
+  core.on("click",()=>select("gr",g.key,true));
+  grLayers[g.key]={halo,core,bounds:core.getBounds()};
+}
+function styleGr(key){
+  const L_=grLayers[key]; if(!L_) return; const st=S(); const s=grStatus(key); const w=+prefs.width; const sel=selected&&selected.type==="gr"&&selected.key===key;
+  const todoC = prefs.todoColor || st.todo; const dc=prefs.done;
+  if(s==="partial"||L_.hasParts) refreshParts(key);
+  const hideParts=()=>{ if(L_.parts){ map.removeLayer(L_.parts); map.removeLayer(L_.partsHalo); } };
+  const visible = s!=="todo" || prefs.showTodo || sel;
+  if(!visible){ map.removeLayer(L_.core); map.removeLayer(L_.halo); hideParts(); return; }
+  if(s==="todo"){
+    hideParts();
+    L_.core.setStyle({color: sel?dc:todoC, weight: sel? w+1.5 : Math.max(1.1,w*0.5), opacity: sel?1:0.8, dashArray:null});
+    if(sel){ L_.halo.setStyle({color: st.uiDark?"#000":"#fff", weight:w+6, opacity:.8, dashArray:null}); L_.halo.addTo(map); } else map.removeLayer(L_.halo);
+  } else if(s==="partial" && L_.hasParts){
+    L_.core.setStyle({color:dc, weight: sel? Math.max(1.6,w*0.7) : Math.max(1.2,w*0.55), opacity:.8, dashArray:`${w*1.4} ${w*1.9}`});
+    if(sel){ L_.halo.setStyle({color: st.uiDark?"#000":"#fff", weight:w+6, opacity:.75, dashArray:null}); L_.halo.addTo(map); } else map.removeLayer(L_.halo);
+    L_.partsHalo.setStyle({color:dc, weight:(sel?w+2:w)+7, opacity: st.uiDark?.32:.22}); L_.parts.setStyle({color:dc, weight: sel?w+2:w, opacity:1});
+    L_.core.addTo(map); L_.partsHalo.addTo(map); L_.parts.addTo(map);
+    if(sel) L_.halo.bringToFront(); L_.core.bringToFront(); L_.partsHalo.bringToFront(); L_.parts.bringToFront(); return;
+  } else {
+    hideParts();
+    L_.core.setStyle({color:dc, weight: sel? w+2 : w, opacity:1, dashArray: s==="partial" ? `${w*2.4} ${w*2}` : null});
+    L_.halo.setStyle({color:dc, weight:(sel?w+2:w)+7, opacity: st.uiDark?.32:.22, dashArray:null});
+    L_.halo.addTo(map);
+  }
+  L_.core.addTo(map);
+  if(s!=="todo"||sel){ L_.halo.bringToFront(); L_.core.bringToFront(); }
+}
+function styleAllGr(){ for(const g of GRS) styleGr(g.key); if(selected&&selected.type==="gr") styleGr(selected.key); }
+
+/* Couches GPX */
+const trLayers={};
+function syncTrackLayers(){
+  for(const id in trLayers){ if(!state.tracks[id]){ map.removeLayer(trLayers[id].core); map.removeLayer(trLayers[id].halo); delete trLayers[id]; } }
+  for(const [id,t] of Object.entries(state.tracks)){
+    if(!trLayers[id]){ const ll=decodePoly(t.enc||"",5); const halo=L.polyline(ll,{renderer:rTracks,interactive:false,lineCap:"round"}); const core=L.polyline(ll,{renderer:rTracks,lineCap:"round"}); core.on("click",()=>select("track",id,true)); trLayers[id]={core,halo,bounds:core.getBounds(),enc:t.enc}; }
+    const L_=trLayers[id]; L_.core.unbindTooltip(); L_.core.bindTooltip(`<b>GPX</b>${esc(t.name)}`,{sticky:true,direction:"top",offset:[0,-8]});
+    styleTrack(id);
+  }
+}
+function styleTrack(id){ const t=state.tracks[id], L_=trLayers[id]; if(!t||!L_) return; const w=+prefs.width; const sel=selected&&selected.type==="track"&&selected.key===id; const c=t.color||prefs.track; const st=S();
+  L_.core.setStyle({color:c, weight: sel?w+2:w, opacity:1}); L_.halo.setStyle({color:c, weight:(sel?w+2:w)+7, opacity: st.uiDark?.32:.24}); L_.halo.addTo(map); L_.core.addTo(map); }
+
+/* Marqueurs photos géolocalisées */
+const photoLayer=L.layerGroup().addTo(map);
+async function showPhotoMarkers(photos){ photoLayer.clearLayers(); const geo=(photos||[]).map((p,i)=>[p,i]).filter(([p])=>p.lat!=null&&p.lng!=null); for(const [p,i] of geo){ const u=await Store.url(p.t||p.id); if(!u) continue; const m=L.marker([p.lat,p.lng],{pane:"photos",icon:L.divIcon({className:"",html:`<div class="phm"><img src="${esc(u)}" alt=""></div>`,iconSize:[0,0]})}); m.on("click",()=>openLightbox(photos,i)); photoLayer.addLayer(m); } }
+
+/* Style global */
+function applyStyle(){
+  const st=S(); const mapEl=$("#map");
+  mapEl.style.setProperty("--sea",st.sea); document.documentElement.style.setProperty("--mapink",st.ink); document.documentElement.style.setProperty("--halo",st.halo); document.documentElement.style.setProperty("--seaink",st.seaink);
+  document.documentElement.style.setProperty("--done",prefs.done); document.documentElement.style.setProperty("--relief-blend", st.blend);
+  nbLayer.eachLayer(l=>l.setStyle({fillColor:st.nb, fillOpacity:1, color:st.dep, opacity:.8}));
+  frLayer.eachLayer(l=>l.setStyle({fillColor:st.land, fillOpacity:1}));
+  depLayer.eachLayer(l=>l.setStyle({color:st.dep, opacity: prefs.showDeps?0.6:0}));
+  regLayer.eachLayer(l=>l.setStyle({color:st.reg, opacity: prefs.showDeps?0.8:0.55, weight: prefs.showDeps?1.2:0.9}));
+  if(reliefLayer) reliefLayer.setOpacity(1);
+  drawRelief(); styleAllGr(); for(const id in trLayers) styleTrack(id); updateLabels(); renderLegend();
+}
+function renderLegend(){ const st=S(); $("#legend").innerHTML = `<span><i style="border-color:${prefs.done}"></i>Parcouru</span><span><i style="border-color:${prefs.done};border-top-style:dashed"></i>En partie</span>${prefs.showTodo?`<span><i style="border-color:${prefs.todoColor||st.todo};border-top-width:2px"></i>À faire</span>`:""}<span><i style="border-color:${prefs.track}"></i>GPX</span>`; }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(prefs.style==="auto") applyStyle(); });
+new MutationObserver(()=>{ if(prefs.style==="auto") applyStyle(); }).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+/* ===================== Carnet : liste ===================== */
+let tab="gr", filter="all", query="";
+function stats(){
+  let n=0,part=0,km=0,up=0;
+  for(const g of GRS){ const s=grStatus(g.key); if(s==="done"){ n++; km+=g.dist; up+=g.up||0; } else if(s==="partial"){ part++; const o=doneOf(g.key); km+=o.d; up+=o.up; } }
+  const trs=Object.values(state.tracks).filter(t=>!t.gr || grStatus(t.gr)==="todo" || (grStatus(t.gr)==="partial" && !partsOf(t.gr).length)); for(const t of trs){ km+=t.dist||0; up+=t.up||0; }
+  $("#sGr").textContent = `${n} / ${GRS.length}`; $("#sGr").title = part ? `+ ${part} GR en partie` : ""; $("#sGrL").textContent = part ? `GR finis · ${part} en cours` : "GR parcourus";
+  $("#sKm").textContent = Math.round(km/1000).toLocaleString("fr-FR")+" km";
+  $("#sUp").textContent = Math.round(up).toLocaleString("fr-FR")+" m";
+}
+const checkSvg='<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function renderList(){
+  const ol=$("#list");
+  if(tab==="gr"){
+    const q=query.trim().toLowerCase().replace(/^gr\s*/,"");
+    const items=GRS.filter(g=>{ const s=grStatus(g.key); if(filter!=="all"&&s!==filter) return false; if(!q) return true; const hay=(g.key+" "+g.name+" "+g.cities).toLowerCase(); return hay.includes(q) || g.key.toLowerCase().replace("gr ","")===q || g.key.toLowerCase().replace("gr ","").startsWith(q); });
+    if(!items.length){ ol.innerHTML=`<li class="empty"><b>Aucun GR ici</b>${filter==="done"?"Coche les GR que tu as parcourus pour les retrouver dans cette liste.":"Essaie un autre numéro ou un autre filtre."}</li>`; return; }
+    ol.innerHTML=items.map(g=>{ const s=grStatus(g.key); const sel=selected&&selected.type==="gr"&&selected.key===g.key; const np=(grRec(g.key).photos||[]).length;
+      return `<li class="row ${s}${sel?" sel":""}" data-k="${esc(g.key)}"><span class="num">${esc(g.key)}</span><span class="t"><b>${esc(g.name||"Sentier de grande randonnée")}</b><span>${s==="partial"&&partsOf(g.key).length?`${fmtKm(doneOf(g.key).d)} / ${fmtKm(g.dist)}`:fmtKm(g.dist)} · D+ ${fmtM(g.up)}${np?` · ${np} photo${np>1?"s":""}`:""}</span></span><span></span><button class="check" data-check="${esc(g.key)}" aria-label="${s==="done"?"Marquer à faire":"Marquer comme parcouru"}" ${state.readOnly?"disabled":""}>${checkSvg}</button></li>`; }).join("");
+  } else {
+    const trs=Object.entries(state.tracks).sort((a,b)=>(b[1].date||b[1].createdAt||"").localeCompare(a[1].date||a[1].createdAt||""));
+    if(!trs.length){ ol.innerHTML=`<li class="empty"><b>Pas encore de trace</b>Importe un fichier GPX (montre, téléphone, Visorando…) : il s'affiche en surbrillance sur la carte et tu peux y ajouter tes photos.</li>`; return; }
+    ol.innerHTML=trs.map(([id,t])=>{ const sel=selected&&selected.type==="track"&&selected.key===id; const np=(t.photos||[]).length;
+      return `<li class="row${sel?" sel":""}" data-t="${esc(id)}"><span class="dot" style="background:${esc(t.color||prefs.track)}"></span><span class="t"><b>${esc(t.name)}</b><span>${fmtKm(t.dist||0)} · D+ ${fmtM(t.up)}${t.date?` · ${new Date(t.date).toLocaleDateString("fr-FR",{month:"short",year:"numeric"})}`:""}${np?` · ${np} ph.`:""}</span></span><span class="meta">${t.gr?esc(t.gr):""}</span><span></span></li>`; }).join("");
+  }
+}
+$("#list").addEventListener("click",e=>{
+  const c=e.target.closest("[data-check]"); if(c){ e.stopPropagation(); const k=c.dataset.check; setStatus(k, grStatus(k)==="done"?"todo":"done"); return; }
+  const r=e.target.closest("[data-k]"); if(r) return select("gr",r.dataset.k,true,true);
+  const t=e.target.closest("[data-t]"); if(t) return select("track",t.dataset.t,true,true);
+});
+$("#q").addEventListener("input",e=>{ query=e.target.value; renderList(); });
+$("#chips").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(!b) return; filter=b.dataset.f; document.querySelectorAll("#chips .chip").forEach(c=>c.setAttribute("aria-pressed",String(c===b))); renderList(); });
+function setTab(t){ tab=t; $("#tabGr").setAttribute("aria-selected",String(t==="gr")); $("#tabTr").setAttribute("aria-selected",String(t==="tr")); $("#grTools").hidden=t!=="gr"; $("#trTools").hidden=t!=="tr"; renderList(); }
+$("#tabGr").onclick=()=>setTab("gr"); $("#tabTr").onclick=()=>setTab("tr");
+
+async function setStatus(key,s,extra){ if(state.readOnly) return; const id=keyId(key); const rec={...grRec(key), status:s, ...(extra||{})}; if(s==="done"&&!rec.date) rec.date=new Date().toISOString().slice(0,7); await Store.save("grs",id,rec); refreshParts(key); renderAll(); if(s==="done") toast(`${key} ajouté à ton carnet`); }
+
+/* ===================== Fiche détaillée ===================== */
+function select(type,key,fly,fromList){
+  const prev=selected; selected={type,key};
+  if(prev&&prev.type==="gr") styleGr(prev.key); if(prev&&prev.type==="track") styleTrack(prev.key);
+  if(type==="gr") styleGr(key); else styleTrack(key);
+  if(fly){ const b=(type==="gr"?grLayers[key]:trLayers[key])?.bounds; if(b&&b.isValid()) map.flyToBounds(b,{padding:[40,40],maxZoom:12,duration:0.7}); }
+  renderDetail(); if(type==="track"&&tab!=="tr") setTab("tr");
+}
+function closeDetail(){ const prev=selected; selected=null; if(prev&&prev.type==="gr") styleGr(prev.key); if(prev&&prev.type==="track") styleTrack(prev.key); photoLayer.clearLayers(); $("#detailView").hidden=true; $("#listView").style.display="flex"; renderList(); }
+function niceStep(range, target){ const raw=range/target; const p=Math.pow(10,Math.floor(Math.log10(raw))); for(const m of [1,2,2.5,5,10]) if(m*p>=raw) return m*p; return 10*p; }
+function profileSvg(prof, dist, bands){
+  if(!prof||prof.length<2) return '<div class="note">Profil altimétrique indisponible.</div>';
+  const n=prof.length; const mn0=Math.min(...prof); let mn=mn0, mx=Math.max(...prof); if(mx-mn<40){ mn-=20; mx+=20; }
+  const ys=niceStep(mx-mn,3); let lo=Math.floor((mn-(mx-mn)*0.05)/ys)*ys, hi=Math.ceil((mx+(mx-mn)*0.22)/ys)*ys; if(lo<0&&mn0>=0) lo=0;
+  const W=1000,H=100, X=i=>i/(n-1)*W, Y=e=>H*(1-(e-lo)/(hi-lo)), pc=e=>(1-(e-lo)/(hi-lo))*100;
+  const d=prof.map((e,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(e).toFixed(2)}`).join("");
+  let grid="", yl="";
+  for(let e=lo;e<=hi+1e-6;e+=ys){ if(e>lo) grid+=`<line class="grid" x1="0" x2="${W}" y1="${Y(e)}" y2="${Y(e)}" vector-effect="non-scaling-stroke"/>`; yl+=`<span style="top:${pc(e)}%">${Math.round(e).toLocaleString("fr-FR")}</span>`; }
+  const km=dist/1000; let xl="";
+  if(km>0){ const xs=niceStep(km,4); xl+=`<span class="s" style="left:0">0</span>`; for(let v=xs; v<km-xs*0.45; v+=xs) xl+=`<span style="left:${v/km*100}%">${v.toLocaleString("fr-FR")}</span>`; xl+=`<span class="e" style="left:100%">${km.toLocaleString("fr-FR",{maximumFractionDigits:km<10?1:0})} km</span>`; }
+  const im=prof.indexOf(Math.max(...prof)); const mxl=im/(n-1)*100, myl=pc(prof[im]);
+  return `<figure class="pf" data-prof="${prof.join(",")}" data-dist="${dist}" data-lo="${lo}" data-hi="${hi}" aria-label="Profil altimétrique : de ${Math.round(Math.min(...prof))} à ${Math.round(Math.max(...prof))} m"><div class="pf-box"><div class="pf-y" aria-hidden="true">${yl}</div><div class="pf-plot"><div class="pf-bands">${bands&&dist?bandsHtml(bands,dist):""}</div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${grid}<path class="area" d="${d}L${W},${H}L0,${H}Z"/><path class="ln" d="${d}" vector-effect="non-scaling-stroke"/></svg><i class="pf-max" style="left:${mxl}%;top:${myl}%"></i><span class="pf-maxl" style="left:${Math.min(88,Math.max(12,mxl))}%;top:${myl}%">${Math.round(prof[im]).toLocaleString("fr-FR")} m</span><div class="pf-cur" hidden><i></i><b></b></div></div></div><div class="pf-x" aria-hidden="true">${xl}</div></figure>`;
+}
+document.addEventListener("pointermove",e=>{ const pl=e.target.closest&&e.target.closest(".pf-plot"); if(!pl) return; const fig=pl.closest(".pf"); const prof=fig.dataset.prof.split(",").map(Number), dist=+fig.dataset.dist, lo=+fig.dataset.lo, hi=+fig.dataset.hi;
+  const r=pl.getBoundingClientRect(); const t=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); const i=Math.round(t*(prof.length-1)); const f=i/(prof.length-1);
+  const c=pl.querySelector(".pf-cur"); c.hidden=false; c.style.left=(f*100)+"%"; c.querySelector("i").style.top=((1-(prof[i]-lo)/(hi-lo))*100)+"%";
+  const b=c.querySelector("b"); b.textContent=`${(dist*f/1000).toLocaleString("fr-FR",{maximumFractionDigits:1})} km · ${Math.round(prof[i]).toLocaleString("fr-FR")} m`; b.classList.toggle("l",f>0.55); });
+document.addEventListener("pointerout",e=>{ const pl=e.target.closest&&e.target.closest(".pf-plot"); if(pl&&!pl.contains(e.relatedTarget)){ const c=pl.querySelector(".pf-cur"); if(c) c.hidden=true; } });
+function photoSection(photos){
+  const ro=state.readOnly;
+  return `<div class="sec-h"><h3>Photos</h3><span>${photos.length||"Aucune"}${photos.length?` photo${photos.length>1?"s":""}`:""}</span></div>
+  ${photos.length?`<div class="gallery" id="gal">${photos.map((p,i)=>`<button data-ph="${i}" aria-label="Voir la photo ${i+1}"><img data-src="${esc(p.t||p.id)}" alt="${esc(p.cap||"")}"></button>`).join("")}</div>`:""}
+  ${ro?"":`<div class="drop" id="drop">Glisse tes photos ici<br><button class="btn" id="addPh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Ajouter des photos</button><div class="note" style="margin-top:6px">Les originaux sont rangés sans compression dans ton Drive, dans un dossier au nom du GR. Les photos géolocalisées apparaissent aussi sur la carte.</div></div>`}`;
+}
+async function hydrateGallery(){ for(const img of document.querySelectorAll("#gal img[data-src]")){ const u=await Store.url(img.dataset.src); if(u) img.src=u; else { img.hidden=true; img.parentElement.classList.add("cloud"); } } }
+function renderDetail(){
+  if(!selected){ return; }
+  $("#listView").style.display="none"; $("#detailView").hidden=false; const el=$("#detail"); const ro=state.readOnly;
+  if(selected.type==="gr"){
+    const g=GRBY[selected.key]; if(!g) return closeDetail(); const rec=grRec(g.key); const s=rec.status||"todo"; const photos=rec.photos||[];
+    el.innerHTML=`<button class="back" id="back">← Tous les GR</button>
+    <div class="dh"><div class="ref">SENTIER DE GRANDE RANDONNÉE</div><h2>${esc(g.key)}</h2><p>${esc(g.name||"")}</p></div>
+    <div class="seg" role="group" aria-label="Statut">${[["todo","À faire"],["partial","En partie"],["done","Parcouru"]].map(([k,l])=>`<button data-s="${k}" aria-pressed="${s===k}" ${ro?"disabled":""}>${l}</button>`).join("")}</div>
+    <div class="kv"><div><div class="l">Distance</div><div class="v">${fmtKm(g.dist)}</div></div><div><div class="l">Dénivelé +</div><div class="v">${fmtM(g.up)}</div></div><div><div class="l">Dénivelé −</div><div class="v">${fmtM(g.dn)}</div></div><div><div class="l">Point haut</div><div class="v">${fmtM(g.max)}</div></div><div><div class="l">Point bas</div><div class="v">${fmtM(g.min)}</div></div><div><div class="l">Tracé</div><div class="v">${g.loop?"Boucle":"Linéaire"}</div></div></div>
+    ${profileSvg(g.prof,g.dist,s==="partial"?partsOf(g.key):null)}
+    ${s==="partial"?partsEditor(g):""}
+    <div class="note">Distance et dénivelé calculés sur le tracé OpenStreetMap et le relief IGN ; ils peuvent différer un peu du topoguide.</div>
+    ${s!=="todo"?`<div class="field"><label for="fDate">Parcouru en</label><input type="month" id="fDate" value="${esc(rec.date||"")}" ${ro?"disabled":""}></div>`:""}
+    <div class="field"><label for="fNotes">Mes notes</label><textarea id="fNotes" placeholder="Étapes, refuges, souvenirs…" ${ro?"disabled":""}>${esc(rec.notes||"")}</textarea></div>
+    ${photoSection(photos)}
+    <div class="links">${g.url?`<a href="${esc(g.url)}" target="_blank" rel="noopener">Fiche officielle</a>`:""}${g.osm?.[0]?`<a href="https://hiking.waymarkedtrails.org/#route?id=${g.osm[0]}" target="_blank" rel="noopener">Voir le tracé détaillé</a>`:""}</div>`;
+    el.querySelectorAll("[data-s]").forEach(b=>b.onclick=async()=>{ const ns=b.dataset.s; let extra=null;
+      if(ns==="partial" && !partsOf(g.key).length){ const tr=Object.keys(state.tracks).find(id=>state.tracks[id].gr===g.key); if(tr&&await addTrackPart(tr,g.key,true)) return; extra={parts:[[0, Math.max(100,Math.round(Math.min(g.dist, Math.max(5000,g.dist*0.25))/100)*100)]]}; }
+      await setStatus(g.key,ns,extra); });
+    if(s==="partial") bindPartsEditor(g);
+    const date=$("#fDate"); if(date) date.onchange=()=>Store.save("grs",keyId(g.key),{...grRec(g.key),date:date.value});
+    bindNotes(()=>Store.save("grs",keyId(g.key),{...grRec(g.key),notes:$("#fNotes").value}));
+    bindPhotos(photos, async (newList)=>{ await Store.save("grs",keyId(g.key),{...grRec(g.key),photos:newList, status: grRec(g.key).status||"partial"}); }, grFolder(g));
+    showPhotoMarkers(photos);
+  } else {
+    const id=selected.key, t=state.tracks[id]; if(!t) return closeDetail(); const photos=t.photos||[];
+    el.innerHTML=`<button class="back" id="back">← Mes traces</button>
+    <div class="dh"><div class="ref">TRACE GPX${t.file?" · "+esc(t.file):""}</div><h2 style="font-size:1.7rem">${esc(t.name)}</h2>${t.date?`<p>${new Date(t.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</p>`:""}</div>
+    <div class="kv"><div><div class="l">Distance</div><div class="v">${fmtKm(t.dist||0)}</div></div><div><div class="l">Dénivelé +</div><div class="v">${fmtM(t.up)}</div></div><div><div class="l">Dénivelé −</div><div class="v">${fmtM(t.dn)}</div></div><div><div class="l">Point haut</div><div class="v">${fmtM(t.max)}</div></div><div><div class="l">Point bas</div><div class="v">${fmtM(t.min)}</div></div><div><div class="l">Points</div><div class="v">${(t.n||0).toLocaleString("fr-FR")}</div></div></div>
+    ${profileSvg(t.prof,t.dist||0)}
+    ${t.up==null?'<div class="note">Ce fichier ne contient pas d\'altitudes : le dénivelé ne peut pas être calculé.</div>':""}
+    <div class="field"><label for="fName">Nom</label><input id="fName" value="${esc(t.name)}" ${ro?"disabled":""}></div>
+    <div class="field"><label>Couleur</label><div class="swatches" id="tSw">${DONE_SWATCHES.concat(["#111111"]).map(c=>`<button style="background:${c}" data-c="${c}" aria-label="Couleur ${c}" aria-pressed="${(t.color||prefs.track)===c}" ${ro?"disabled":""}></button>`).join("")}<input type="color" id="tCol" value="${esc(t.color||prefs.track)}" aria-label="Autre couleur" ${ro?"disabled":""}></div></div>
+    <div class="field"><label for="fGr">Sur quel GR ?</label><select id="fGr" ${ro?"disabled":""}><option value="">— Aucun —</option>${GRS.map(g=>`<option value="${esc(g.key)}" ${t.gr===g.key?"selected":""}>${esc(g.key)} · ${esc((g.name||"").slice(0,40))}</option>`).join("")}</select></div>
+    <div class="field"><label for="fNotes">Mes notes</label><textarea id="fNotes" placeholder="Météo, compagnons, bivouac…" ${ro?"disabled":""}>${esc(t.notes||"")}</textarea></div>
+    ${photoSection(photos)}
+    ${ro?"":`<div class="confirm" id="delZone"><button class="btn danger" id="delTr">Supprimer cette trace</button></div>`}`;
+    const upd=patch=>Store.save("tracks",id,{...state.tracks[id],...patch}).then(()=>{ styleTrack(id); renderList(); stats(); });
+    const nm=$("#fName"); if(nm) nm.onchange=()=>upd({name:nm.value.trim()||t.name});
+    $("#tSw")?.addEventListener("click",e=>{ const b=e.target.closest("[data-c]"); if(b){ upd({color:b.dataset.c}).then(renderDetail); } });
+    const tc=$("#tCol"); if(tc) tc.onchange=()=>upd({color:tc.value}).then(renderDetail);
+    const fg=$("#fGr"); if(fg) fg.onchange=async()=>{ await upd({gr:fg.value||null}); if(fg.value && grStatus(fg.value)!=="done"){ const ok=await addTrackPart(id,fg.value,true); if(ok) toast(`Portion ajoutée au ${fg.value}`); else if(grStatus(fg.value)==="todo"){ await setStatus(fg.value,"partial"); toast(`${fg.value} marqué « en partie »`); } } };
+    bindNotes(()=>upd({notes:$("#fNotes").value}));
+    bindPhotos(photos, async newList=>{ await upd({photos:newList}); }, t.gr&&GRBY[t.gr] ? grFolder(GRBY[t.gr]) : safeName("Traces – "+t.name));
+    const del=$("#delTr"); if(del) del.onclick=()=>{ $("#delZone").innerHTML=`<span>Supprimer « ${esc(t.name)} » et ses ${photos.length} photo(s) ?</span><button class="btn danger" id="delYes">Supprimer</button><button class="btn" id="delNo">Annuler</button>`; $("#delNo").onclick=renderDetail; $("#delYes").onclick=async()=>{ for(const p of photos){ await Store.delBlob(p.id); await Store.delBlob(p.t); await Store.delBlob(p.o); } await Store.delBlob(t.gpx); await Store.remove("tracks",id); syncTrackLayers(); closeDetail(); stats(); toast("Trace supprimée"); }; };
+    showPhotoMarkers(photos);
+  }
+  $("#back").onclick=closeDetail; hydrateGallery(); renderList();
+}
+function bindNotes(save){ const n=$("#fNotes"); if(!n) return; let t; n.oninput=()=>{ clearTimeout(t); t=setTimeout(save,900); }; n.onblur=()=>{ clearTimeout(t); save(); }; }
+let photoTarget=null;
+function bindPhotos(photos, commit, folder){
+  $("#gal")?.addEventListener("click",e=>{ const b=e.target.closest("[data-ph]"); if(b) openLightbox(photos,+b.dataset.ph, commit); });
+  const drop=$("#drop"); if(!drop) return; photoTarget={photos,commit,folder};
+  $("#addPh").onclick=()=>$("#photoInput").click();
+  drop.addEventListener("dragover",e=>{ e.preventDefault(); e.stopPropagation(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+  drop.addEventListener("drop",e=>{ e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); addPhotos([...e.dataTransfer.files]); });
+}
+$("#photoInput").addEventListener("change",e=>{ addPhotos([...e.target.files]); e.target.value=""; });
+
+/* ===================== Photos ===================== */
+async function resizeImage(file, max, q){ const bmp=await createImageBitmap(file); const r=Math.min(1,max/Math.max(bmp.width,bmp.height)); const w=Math.round(bmp.width*r), h=Math.round(bmp.height*r); const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(bmp,0,0,w,h); const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",q)); return {blob,w,h}; }
+function readExif(buf){ // GPS + date de prise de vue (JPEG)
+  try{ const v=new DataView(buf); if(v.getUint16(0)!==0xFFD8) return {}; let o=2;
+    while(o<v.byteLength-4){ const m=v.getUint16(o); const len=v.getUint16(o+2); if(m===0xFFE1 && v.getUint32(o+4)===0x45786966){ const t=o+10; const le=v.getUint16(t)===0x4949; const u16=p=>v.getUint16(p,le), u32=p=>v.getUint32(p,le);
+        const ifd=(p)=>{ const n=u16(p); const out={}; for(let i=0;i<n;i++){ const e=p+2+i*12; out[u16(e)]={type:u16(e+2),count:u32(e+4),off:e+8}; } return out; };
+        const val=(en)=>{ if(!en) return null; const sz={1:1,2:1,3:2,4:4,5:8,7:1,9:4,10:8}[en.type]||1; const p= sz*en.count>4 ? t+u32(en.off) : en.off; if(en.type===2){ let s=""; for(let i=0;i<en.count-1;i++) s+=String.fromCharCode(v.getUint8(p+i)); return s; } if(en.type===5){ const a=[]; for(let i=0;i<en.count;i++) a.push(u32(p+i*8)/u32(p+i*8+4)); return a; } if(en.type===3) return u16(p); if(en.type===4) return u32(p); return v.getUint8(p); };
+        const i0=ifd(t+u32(t+4)); const res={};
+        if(i0[0x8769]){ const ex=ifd(t+val(i0[0x8769])); const d=val(ex[0x9003])||val(i0[0x0132]); if(d){ const m2=d.match(/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d)/); if(m2) res.takenAt=`${m2[1]}-${m2[2]}-${m2[3]}T${m2[4]}:${m2[5]}`; } }
+        if(i0[0x8825]){ const g=ifd(t+val(i0[0x8825])); const la=val(g[2]), lo=val(g[4]); if(la&&lo){ let lat=la[0]+la[1]/60+la[2]/3600, lng=lo[0]+lo[1]/60+lo[2]/3600; if(val(g[1])==="S") lat=-lat; if(val(g[3])==="W") lng=-lng; if(isFinite(lat)&&isFinite(lng)&&(lat||lng)){ res.lat=+lat.toFixed(6); res.lng=+lng.toFixed(6); } } }
+        return res; }
+      if((m&0xFF00)!==0xFF00) break; o+=2+len; }
+  }catch(e){} return {}; }
+function safeName(s){ return String(s).replace(/[\\/:*?"<>|\u0000-\u001f]/g,"-").replace(/\s+/g," ").trim().slice(0,120)||"Photos"; }
+function grFolder(g){ return safeName(g.key+(g.name?" – "+g.name:"")); }
+async function addPhotos(files){
+  if(!photoTarget||state.readOnly) return; files=files.filter(f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)); if(!files.length) return;
+  const {commit,folder}=photoTarget; let list=[...photoTarget.photos]; let ok=0, noPrev=0;
+  toast(`Ajout de ${files.length} photo${files.length>1?"s":""}…`);
+  for(const f of files){
+    try{ const ex = /jpe?g$/i.test(f.type)||/\.jpe?g$/i.test(f.name) ? readExif(await f.arrayBuffer()) : {};
+      const o=await Store.putBlob(f, f.type||"image/jpeg", {path:["photos",folder||"Photos"], name:f.name, drop:true});
+      let rec={o,name:f.name,size:f.size,cap:"",added:new Date().toISOString(),...ex};
+      try{ const big=await resizeImage(f,1800,0.85), th=await resizeImage(f,480,0.8);
+        rec={...rec, id:await Store.putBlob(big.blob,"image/jpeg"), t:await Store.putBlob(th.blob,"image/jpeg"), w:big.w, h:big.h};
+      }catch(e){ noPrev++; }
+      list.push(rec); ok++;
+    }catch(e){ toast(`${f.name} : ajout impossible`); }
+  }
+  photoTarget.photos=list; await commit(list); renderDetail();
+  toast(`${ok} photo${ok>1?"s":""} ajoutée${ok>1?"s":""}${state.mode==="drive"?` · originaux envoyés dans « Carnet des GR / photos / ${folder} »`:""}${noPrev?` (${noPrev} sans aperçu : format non lisible par le navigateur, l'original est gardé)`:""}`);
+}
+let lb=null;
+async function openLightbox(photos,i,commit){ lb={photos,i,commit:commit||photoTarget?.commit}; await renderLightbox(); }
+async function renderLightbox(){
+  const box=$("#lightbox"); if(!lb){ box.hidden=true; return; } const p=lb.photos[lb.i]; if(!p){ lb=null; box.hidden=true; return; }
+  const u=(await Store.url(p.id))||(await Store.url(p.t)); const ro=state.readOnly; const ofid=p.o?doc.files[p.o]:null;
+  box.innerHTML=`<div class="stage">${u?`<img src="${esc(u)}" alt="${esc(p.cap||p.name||"")}">`:`<p style="max-width:28em;text-align:center">Cette photo est sur ton Google Drive : connecte-toi (bouton en haut du carnet) pour l'afficher.</p>`}<button class="close" id="lbX" aria-label="Fermer">×</button>${lb.photos.length>1?`<button class="nav prev" id="lbP" aria-label="Photo précédente">‹</button><button class="nav next" id="lbN" aria-label="Photo suivante">›</button>`:""}</div>
+  <div class="bar"><input id="lbCap" placeholder="Ajouter une légende…" value="${esc(p.cap||"")}" ${ro?"disabled":""}><span class="cap">${lb.i+1}/${lb.photos.length}${p.takenAt?" · "+new Date(p.takenAt).toLocaleDateString("fr-FR"):""}${p.lat!=null?" · géolocalisée":""}</span>${ofid&&ofid!=="x"?`<a class="btn" href="https://drive.google.com/file/d/${esc(ofid)}/view" target="_blank" rel="noopener">Voir l'original</a>`:p.o&&ofid===""?`<span class="cap">original en attente d'envoi</span>`:""}${ro?"":`<span id="lbDelZ"><button class="btn" id="lbDel">Supprimer</button></span>`}</div>`;
+  box.hidden=false;
+  $("#lbX").onclick=()=>{ lb=null; box.hidden=true; };
+  $("#lbP")&&($("#lbP").onclick=()=>{ lb.i=(lb.i-1+lb.photos.length)%lb.photos.length; renderLightbox(); });
+  $("#lbN")&&($("#lbN").onclick=()=>{ lb.i=(lb.i+1)%lb.photos.length; renderLightbox(); });
+  const cap=$("#lbCap"); if(cap&&!ro) cap.onchange=async()=>{ const list=lb.photos.map((x,k)=>k===lb.i?{...x,cap:cap.value}:x); lb.photos=list; if(photoTarget) photoTarget.photos=list; await lb.commit(list); };
+  const del=$("#lbDel"); if(del) del.onclick=()=>{ $("#lbDelZ").innerHTML=`<button class="btn" id="lbYes">Confirmer la suppression</button> <button class="btn" id="lbNo">Annuler</button>`; $("#lbNo").onclick=renderLightbox; $("#lbYes").onclick=async()=>{ const x=lb.photos[lb.i]; const list=lb.photos.filter((_,k)=>k!==lb.i); await Store.delBlob(x.id); await Store.delBlob(x.t); await Store.delBlob(x.o); lb.photos=list; if(photoTarget) photoTarget.photos=list; await lb.commit(list); lb.i=Math.min(lb.i,list.length-1); if(!list.length){ lb=null; $("#lightbox").hidden=true; } else renderLightbox(); renderDetail(); }; };
+}
+document.addEventListener("keydown",e=>{ if(!lb) { if(e.key==="Escape"&&!$("#sync").hidden){ openSync(false); return; } if(e.key==="Escape"&&!$("#custom").hidden) toggleCustom(false); return; } if(e.target.tagName==="INPUT") return; if(e.key==="Escape"){ lb=null; $("#lightbox").hidden=true; } if(e.key==="ArrowLeft") $("#lbP")?.click(); if(e.key==="ArrowRight") $("#lbN")?.click(); });
+
+/* ===================== Import GPX ===================== */
+function parseGpx(text){
+  const xml=new DOMParser().parseFromString(text,"application/xml"); if(xml.querySelector("parsererror")) throw new Error("Fichier GPX illisible");
+  const segs=[]; const pick=(sel)=>{ xml.querySelectorAll(sel).forEach(seg=>{ const pts=[...seg.children].filter(n=>/^(trkpt|rtept)$/i.test(n.localName)).map(n=>{ const e=[...n.children].find(c=>c.localName==="ele"); const tm=[...n.children].find(c=>c.localName==="time"); return {lat:+n.getAttribute("lat"),lng:+n.getAttribute("lon"),ele:e?+e.textContent:null,time:tm?tm.textContent:null}; }).filter(p=>isFinite(p.lat)&&isFinite(p.lng)); if(pts.length>1) segs.push(pts); }); };
+  pick("trkseg"); if(!segs.length) pick("rte"); if(!segs.length) throw new Error("Aucune trace trouvée dans ce fichier");
+  const nameEl=[...xml.getElementsByTagName("*")].find(n=>n.localName==="name"); const firstT=segs.flat().find(p=>p.time)?.time;
+  let dist=0, up=0, dn=0, mn=Infinity, mx=-Infinity, hasEle=false; const profPts=[];
+  for(const s of segs){ let ref=null; for(let i=0;i<s.length;i++){ if(i) dist+=hav([s[i-1].lat,s[i-1].lng],[s[i].lat,s[i].lng]); const e=s[i].ele; if(e!=null&&isFinite(e)){ hasEle=true; mn=Math.min(mn,e); mx=Math.max(mx,e); if(ref==null) ref=e; else { const d=e-ref; if(d>=4){ up+=d; ref=e; } else if(d<=-4){ dn-=d; ref=e; } } profPts.push([dist,e]); } } }
+  const prof=[]; if(hasEle&&profPts.length>1){ const N=100; let j=0; for(let k=0;k<N;k++){ const target=dist*k/(N-1); while(j<profPts.length-1&&profPts[j+1][0]<target) j++; prof.push(Math.round(profPts[j][1])); } }
+  const lines=segs.map(s=>simplify(s.map(p=>[p.lat,p.lng]),0.00004));
+  return { name:(nameEl?.textContent||"").trim(), date:firstT||null, dist:Math.round(dist), up:hasEle?Math.round(up):null, dn:hasEle?Math.round(dn):null, min:hasEle?Math.round(mn):null, max:hasEle?Math.round(mx):null, prof, enc:encodePoly(lines,5), n:segs.reduce((a,s)=>a+s.length,0) };
+}
+function guessGr(enc){ // GR le plus proche du milieu de la trace
+  const ll=decodePoly(enc,5).flat(); if(!ll.length) return null; const pts=[ll[0],ll[Math.floor(ll.length/2)],ll[ll.length-1]]; let best=null, bd=1500;
+  for(const g of GRS){ const b=grLayers[g.key].bounds; if(!b.pad(0.05).contains(pts[1])) continue; const line=grLayers[g.key].core.getLatLngs(); let sum=0; for(const p of pts){ let m=1e9; for(const seg of line){ for(let i=0;i<seg.length;i+=1){ const d=hav(p,[seg[i].lat,seg[i].lng]); if(d<m) m=d; } } sum+=m; } const avg=sum/3; if(avg<bd){ bd=avg; best=g.key; } }
+  return best; }
+async function importGpx(files){
+  if(state.readOnly){ toast("Ce carnet est en lecture seule."); return; }
+  files=files.filter(f=>/\.gpx$/i.test(f.name)); if(!files.length){ toast("Choisis un fichier .gpx"); return; }
+  let last=null;
+  for(const f of files){
+    try{ const text=await f.text(); const t=parseGpx(text); const id="t"+uid();
+      let gpx=null; try{ gpx=await Store.putBlob(new Blob([text],{type:"text/plain"}),"text/plain"); }catch(e){}
+      const gr=guessGr(t.enc);
+      const rec={...t, name:t.name||f.name.replace(/\.gpx$/i,""), file:f.name, color:prefs.track, gpx, gr, photos:[], notes:"", createdAt:new Date().toISOString()};
+      await Store.save("tracks",id,rec); last=id;
+      if(gr&&grStatus(gr)!=="done"){ const ok=await addTrackPart(id,gr,true); if(!ok&&grStatus(gr)==="todo") await setStatus(gr,"partial"); }
+      toast(`« ${rec.name} » importée${gr?` · sur le ${gr}`:""}`);
+    }catch(e){ toast(`${f.name} : ${e.message}`); }
+  }
+  syncTrackLayers(); setTab("tr"); if(last) select("track",last,true); stats();
+}
+$("#gpxInput").addEventListener("change",e=>{ importGpx([...e.target.files]); e.target.value=""; });
+$("#importBtn").onclick=$("#importBtn2").onclick=()=>$("#gpxInput").click();
+(function(){ const wrap=$("#mapwrap"); let ov=null, depth=0; wrap.addEventListener("dragenter",e=>{ if(![...e.dataTransfer.types].includes("Files")) return; depth++; if(!ov){ ov=document.createElement("div"); ov.className="dropmap"; ov.textContent="Dépose tes fichiers GPX"; wrap.appendChild(ov); } }); wrap.addEventListener("dragover",e=>e.preventDefault()); wrap.addEventListener("dragleave",()=>{ depth--; if(depth<=0&&ov){ ov.remove(); ov=null; depth=0; } }); wrap.addEventListener("drop",e=>{ e.preventDefault(); depth=0; ov?.remove(); ov=null; importGpx([...e.dataTransfer.files]); }); })();
+
+/* ===================== Portions parcourues (GR « en partie ») ===================== */
+/* Une portion = [début, fin] en mètres depuis le départ du GR, sur la même échelle que le profil. */
+function grGeo(key){ const L_=grLayers[key]; if(L_.geo) return L_.geo; const lines=decodePoly(GRBY[key].enc,4); const cum=[]; let s=0;
+  for(const l of lines){ const c=[s]; for(let i=1;i<l.length;i++){ s+=hav(l[i-1],l[i]); c.push(s); } cum.push(c); }
+  return L_.geo={lines,cum,L:s}; }
+function grSub(key,m0,m1){ const g=GRBY[key], G=grGeo(key); const k=G.L/(g.dist||G.L||1); const s0=m0*k, s1=m1*k; const out=[];
+  G.lines.forEach((l,li)=>{ const c=G.cum[li]; if(c[c.length-1]<s0||c[0]>s1) return; const cur=[];
+    for(let i=0;i<l.length;i++){ const si=c[i];
+      if(i===0){ if(si>=s0&&si<=s1) cur.push(l[0]); continue; }
+      const sa=c[i-1], lerp=s=>{ const t=(s-sa)/((si-sa)||1); return [l[i-1][0]+(l[i][0]-l[i-1][0])*t, l[i-1][1]+(l[i][1]-l[i-1][1])*t]; };
+      if(sa<s0&&si>s0) cur.push(lerp(s0));
+      if(si>=s0&&si<=s1) cur.push(l[i]);
+      if(sa<s1&&si>s1) cur.push(lerp(s1)); }
+    if(cur.length>1) out.push(cur); });
+  return out; }
+function grProject(key,pt){ // position (m depuis le départ) du point du GR le plus proche, et distance à ce point
+  const g=GRBY[key], G=grGeo(key); let best=1e12, bs=0;
+  G.lines.forEach((l,li)=>{ const c=G.cum[li]; for(let i=0;i<l.length;i++){ const d=hav(pt,l[i]); if(d<best){ best=d; bs=c[i]; } } });
+  return { m: bs/(G.L||1)*g.dist, d: best }; }
+function partsOf(key){ return (grRec(key).parts||[]).filter(p=>Array.isArray(p)&&p[1]>p[0]); }
+function unionParts(parts){ const s=parts.map(p=>[p[0],p[1]]).sort((a,b)=>a[0]-b[0]); const out=[]; for(const p of s){ const l=out[out.length-1]; if(l&&p[0]<=l[1]) l[1]=Math.max(l[1],p[1]); else out.push(p); } return out; }
+const profUpCache={};
+function partStats(g,a,b){ const P=g.prof, n=P?.length||0; if(n<2||!g.dist) return {d:b-a,up:null,dn:null};
+  if(!profUpCache[g.key]){ let fu=0,fd=0; for(let i=1;i<n;i++){ const d=P[i]-P[i-1]; if(d>0) fu+=d; else fd-=d; } profUpCache[g.key]=[fu,fd]; }
+  const [fu,fd]=profUpCache[g.key]; const at=m=>{ const x=Math.max(0,Math.min(n-1,m/g.dist*(n-1))); const i=Math.min(n-2,Math.floor(x)); return P[i]+(P[i+1]-P[i])*(x-i); };
+  const pts=[at(a)]; for(let i=Math.ceil(a/g.dist*(n-1)); i<=Math.floor(b/g.dist*(n-1)); i++) pts.push(P[i]); pts.push(at(b));
+  let up=0,dn=0; for(let i=1;i<pts.length;i++){ const d=pts[i]-pts[i-1]; if(d>0) up+=d; else dn-=d; }
+  return { d:b-a, up: fu? up*(g.up/fu) : up, dn: fd? dn*((g.dn||0)/fd) : dn }; }
+function doneOf(key){ const g=GRBY[key]; const s=grStatus(key); if(s==="done") return {d:g.dist, up:g.up||0, full:true};
+  if(s!=="partial") return {d:0,up:0}; let d=0,up=0; for(const [a,b] of unionParts(partsOf(key))){ const st=partStats(g,a,b); d+=st.d; up+=st.up||0; } return {d,up}; }
+function trackPart(trackId,key){ // portion du GR couverte par une trace GPX
+  const t=state.tracks[trackId]; if(!t?.enc||!GRBY[key]) return null; const pts=decodePoly(t.enc,5).flat(); if(pts.length<2) return null;
+  const step=Math.max(1,Math.floor(pts.length/150)); let lo=Infinity, hi=-Infinity, near=0, tot=0;
+  for(let i=0;i<pts.length;i+=step){ tot++; const p=grProject(key,pts[i]); if(p.d<600){ near++; lo=Math.min(lo,p.m); hi=Math.max(hi,p.m); } }
+  if(near<Math.max(2,tot*0.3)||hi-lo<300) return null; return [Math.max(0,Math.round(lo/100)*100), Math.min(GRBY[key].dist,Math.round(hi/100)*100)]; }
+async function addTrackPart(trackId,key,quiet){ const part=trackPart(trackId,key); if(!part){ if(!quiet) toast("Cette trace ne suit pas assez ce GR pour en déduire une portion."); return false; }
+  const rec=grRec(key); const st=rec.status||"todo"; if(st==="done") return true;
+  const parts=[...partsOf(key)]; if(!parts.some(p=>Math.abs(p[0]-part[0])<200&&Math.abs(p[1]-part[1])<200)) parts.push(part);
+  await Store.save("grs",keyId(key),{...rec,status:"partial",parts,date:rec.date||(state.tracks[trackId]?.date||"").slice(0,7)||undefined});
+  refreshParts(key); renderAll(); if(!quiet) toast(`Portion ajoutée au ${key} : ${fmtKm(part[1]-part[0])}`); return true; }
+
+/* calques des portions */
+function refreshParts(key){ const L_=grLayers[key]; if(!L_) return; const s=grStatus(key); const parts= s==="partial" ? unionParts(partsOf(key)) : [];
+  if(!L_.parts){ L_.parts=L.polyline([],{renderer:rGrs,lineCap:"round",lineJoin:"round"}); L_.partsHalo=L.polyline([],{renderer:rGrs,interactive:false,lineCap:"round",lineJoin:"round"}); L_.parts.on("click",()=>select("gr",key,true)); L_.parts.bindTooltip(`<b>${esc(key)}</b>${esc(GRBY[key].name)}`,{sticky:true,direction:"top",offset:[0,-8]}); }
+  const ll=[]; for(const [a,b] of parts) ll.push(...grSub(key,a,b));
+  L_.parts.setLatLngs(ll); L_.partsHalo.setLatLngs(ll); L_.hasParts=ll.length>0; }
+
+/* éditeur de portions dans la fiche */
+function partsEditor(g){
+  const parts=partsOf(g.key); const tot=doneOf(g.key);
+  const trs=Object.entries(state.tracks).filter(([,t])=>t.gr===g.key);
+  return `<section class="parts" id="partsBox" aria-label="Portions parcourues">
+    <div class="sec-h"><h3>Portions parcourues</h3><span id="partsSum">${fmtKm(tot.d)} sur ${fmtKm(g.dist)}</span></div>
+    ${parts.length?"":`<p class="note">Indique avec les curseurs la partie du GR que tu as faite : elle s'affiche sur la carte et compte dans tes kilomètres.</p>`}
+    <div id="partsList">${parts.map((p,i)=>partRow(g,p,i)).join("")}</div>
+    <div class="row-btns"><button class="btn" id="addPart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Ajouter une portion</button>
+    ${trs.map(([id,t])=>`<button class="btn" data-trpart="${esc(id)}">Depuis la trace « ${esc(t.name.slice(0,28))} »</button>`).join("")}</div>
+  </section>`; }
+function partLabel(g,a,b){ const st=partStats(g,a,b); return `km ${(a/1000).toLocaleString("fr-FR",{maximumFractionDigits:1})} → ${(b/1000).toLocaleString("fr-FR",{maximumFractionDigits:1})} · <b>${fmtKm(b-a)}</b>${st.up!=null?` · D+ ${fmtM(st.up)}`:""}`; }
+function partRow(g,p,i){ const max=Math.round(g.dist/100)*100||g.dist;
+  return `<div class="part" data-i="${i}">
+    <div class="part-h"><span class="part-n">Portion ${i+1}</span><span class="part-v">${partLabel(g,p[0],p[1])}</span><button class="part-x" data-delpart="${i}" aria-label="Supprimer la portion ${i+1}">×</button></div>
+    <div class="range2"><span class="trk"><span class="fill" style="left:${p[0]/max*100}%;width:${(p[1]-p[0])/max*100}%"></span></span>
+      <input type="range" class="ra" min="0" max="${max}" step="100" value="${p[0]}" aria-label="Début de la portion ${i+1} (mètres)">
+      <input type="range" class="rb" min="0" max="${max}" step="100" value="${p[1]}" aria-label="Fin de la portion ${i+1} (mètres)"></div>
+  </div>`; }
+function bindPartsEditor(g){
+  const box=$("#partsBox"); if(!box) return;
+  const read=()=>[...box.querySelectorAll(".part")].map(el=>[+el.querySelector(".ra").value, +el.querySelector(".rb").value]);
+  const paint=()=>{ const parts=read(); const fig=$("#detail .pf");
+    box.querySelectorAll(".part").forEach((el,i)=>{ const [a,b]=parts[i]; const mx=+el.querySelector(".ra").max||g.dist; el.querySelector(".fill").style.left=(a/mx*100)+"%"; el.querySelector(".fill").style.width=((b-a)/mx*100)+"%"; el.querySelector(".part-v").innerHTML=partLabel(g,a,b); });
+    if(fig) fig.querySelector(".pf-bands").innerHTML=bandsHtml(parts,g.dist);
+    let d=0; for(const [a,b] of unionParts(parts)) d+=b-a; $("#partsSum").textContent=`${fmtKm(d)} sur ${fmtKm(g.dist)}`;
+    const L_=grLayers[g.key]; const ll=[]; for(const [a,b] of unionParts(parts)) ll.push(...grSub(g.key,a,b)); L_.parts.setLatLngs(ll); L_.partsHalo.setLatLngs(ll); };
+  let raf=0; const onInput=e=>{ const el=e.target.closest(".part"); if(!el) return; const ra=el.querySelector(".ra"), rb=el.querySelector(".rb");
+    if(+ra.value>+rb.value-100){ if(e.target===ra) ra.value=+rb.value-100; else rb.value=+ra.value+100; }
+    cancelAnimationFrame(raf); raf=requestAnimationFrame(paint); };
+  const commit=async()=>{ await Store.save("grs",keyId(g.key),{...grRec(g.key),parts:read()}); refreshParts(g.key); stats(); renderList(); };
+  box.addEventListener("input",onInput); box.addEventListener("change",commit);
+  box.querySelectorAll("[data-delpart]").forEach(b=>b.onclick=async()=>{ const parts=read(); parts.splice(+b.dataset.delpart,1); await Store.save("grs",keyId(g.key),{...grRec(g.key),parts}); refreshParts(g.key); renderAll(); renderDetail(); });
+  $("#addPart").onclick=async()=>{ const parts=read(); const u=unionParts(parts); let start=0, end=g.dist; for(const [a,b] of u){ if(a-start>1000){ end=a; break; } start=Math.max(start,b); }
+    if(g.dist-start<300){ start=0; end=g.dist; }
+    const len=Math.min(end-start, Math.max(1000,Math.round(g.dist*0.2/100)*100)); let np=[start,start+len];
+    np=np.map(v=>Math.round(v/100)*100); parts.push(np); await Store.save("grs",keyId(g.key),{...grRec(g.key),status:"partial",parts}); refreshParts(g.key); renderAll(); renderDetail(); };
+  box.querySelectorAll("[data-trpart]").forEach(b=>b.onclick=async()=>{ await addTrackPart(b.dataset.trpart,g.key); renderDetail(); });
+}
+function bandsHtml(parts,dist){ return unionParts(parts).map(([a,b])=>`<i style="left:${a/dist*100}%;width:${(b-a)/dist*100}%"></i>`).join(""); }
+
+/* ===================== Panneau « Sauvegarde & synchronisation » ===================== */
+function openSync(v){ const p=$("#sync"); p.hidden=!v; if(v){ renderSyncPanel(); Store.loadGis().catch(()=>{}); } }
+$("#store").onclick=()=>openSync(true);
+function renderSyncPanel(){
+  const p=$("#sync"); if(p.hidden) return; const S_=Store; const cid=S_.clientId(); const on=state.mode==="drive";
+  const nGr=Object.values(doc.grs).filter(r=>r.status&&r.status!=="todo").length, nTr=Object.keys(state.tracks).length, nPh=Object.values(doc.files).filter(v=>v!=="x").length;
+  let status;
+  if(!on) status=`<p><b>Tes données sont enregistrées uniquement dans ce navigateur.</b> Connecte un Google Drive pour les retrouver sur ton téléphone et ton ordinateur, et pour ne rien perdre si tu changes d'appareil.</p>`;
+  else if(!S_.hasToken()) status=`<p><b>Google Drive est relié, mais la session a expiré.</b> Tes modifications restent enregistrées ici et partiront dès que tu te reconnectes.</p>`;
+  else status=`<p><b>Synchronisé avec Google Drive</b>, dossier « Carnet des GR ».${S_.lastSync?` Dernière synchro à ${new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.`:""}</p>`;
+  const waiting = S_.pending ? `<p class="note">${S_.pending} fichier${S_.pending>1?"s":""} en attente d'envoi.</p>` : "";
+  const err = S_.err && S_.err!=="auth" ? `<p class="note warn">Dernière erreur : ${esc(S_.err)}</p>` : "";
+  p.innerHTML=`<div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="syncH">
+    <button class="close" id="syncX" aria-label="Fermer">×</button>
+    <h3 id="syncH">Sauvegarde & synchronisation</h3>
+    <div class="sum"><span><b>${nGr}</b> GR</span><span><b>${nTr}</b> trace${nTr>1?"s":""}</span><span><b>${nPh}</b> fichier${nPh>1?"s":""}</span></div>
+    ${status}${waiting}${err}
+    <div class="row-btns">
+      ${!cid?"":!on?`<button class="btn primary" id="sConnect">Connecter Google Drive</button>`:!S_.hasToken()?`<button class="btn primary" id="sRe">Se reconnecter</button>`:`<button class="btn primary" id="sNow" ${S_.syncing?"disabled":""}>${S_.syncing?"Synchro en cours…":"Synchroniser maintenant"}</button>`}
+      ${on?`<button class="btn" id="sOff">Déconnecter cet appareil</button>`:""}
+    </div>
+    ${cid?"":`<div class="field"><label for="sCid">Identifiant client Google</label><input id="sCid" placeholder="123456-abc.apps.googleusercontent.com" autocomplete="off"><div class="note" style="margin-top:4px">À créer une seule fois dans la console Google (voir le guide d'installation). Tu peux aussi l'écrire dans le fichier config.js pour ne pas le saisir sur chaque appareil.</div></div><button class="btn" id="sCidOk">Enregistrer l'identifiant</button>`}
+    <hr>
+    <h4>Copie de sauvegarde</h4>
+    <p class="note">Un fichier que tu gardes où tu veux (clé USB, autre cloud). Il permet aussi de passer d'un appareil à l'autre sans Google Drive.</p>
+    <div class="row-btns"><button class="btn" id="sExp">Exporter (données)</button><button class="btn" id="sExpP">Exporter avec les photos</button><button class="btn" id="sImp">Importer…</button></div>
+    <input type="file" id="sImpF" accept=".json,application/json" hidden>
+  </div>`;
+  $("#syncX").onclick=()=>openSync(false);
+  const go=async(pick)=>{ try{ await Store.connect(pick); toast("Google Drive connecté"); renderStoreBadge(); renderSyncPanel(); await Store.sync(true); }catch(e){ toast(e.message); renderSyncPanel(); } };
+  $("#sConnect")&&($("#sConnect").onclick=()=>go(true));
+  $("#sRe")&&($("#sRe").onclick=()=>go(false));
+  $("#sNow")&&($("#sNow").onclick=()=>Store.sync(true));
+  $("#sOff")&&($("#sOff").onclick=()=>{ Store.disconnect(); renderSyncPanel(); toast("Cet appareil n'est plus relié au Drive. Tes données restent ici et sur le Drive."); });
+  $("#sCidOk")&&($("#sCidOk").onclick=()=>{ const v=$("#sCid").value.trim(); if(!/\.apps\.googleusercontent\.com$/.test(v)){ toast("L'identifiant doit se terminer par .apps.googleusercontent.com"); return; } try{ localStorage.setItem("carnet-client-id",v); }catch(e){} Store.loadGis().catch(()=>{}); renderSyncPanel(); });
+  $("#sExp").onclick=()=>Store.exportFile(false);
+  $("#sExpP").onclick=async()=>{ toast("Préparation de la sauvegarde…"); await Store.exportFile(true); };
+  $("#sImp").onclick=()=>$("#sImpF").click();
+  $("#sImpF").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; try{ await Store.importFile(f); toast("Sauvegarde importée et fusionnée"); renderSyncPanel(); }catch(err){ toast(err.message||"Import impossible"); } };
+}
+$("#sync").addEventListener("click",e=>{ if(e.target.id==="sync") openSync(false); });
+
+/* ===================== Personnalisation ===================== */
+function toggleCustom(v){ const p=$("#custom"); const show = v ?? p.hidden; p.hidden=!show; $("#customBtn").setAttribute("aria-expanded",String(show)); if(show) renderCustom(); }
+$("#customBtn").onclick=()=>toggleCustom();
+function renderCustom(){
+  const p=$("#custom"); if(p.hidden) return; const cur=prefs.style;
+  const sw=k=>{ const s=STYLES[k]; return `linear-gradient(135deg, ${s.sea} 0 34%, ${s.land} 34% 70%, ${s.nb} 70%)`; };
+  p.innerHTML=`<h3>Personnaliser la carte</h3>
+  <div><div class="field"><label>Fond de carte</label></div><div class="styles">${[["auto","Selon le thème"],...Object.entries(STYLES).map(([k,s])=>[k,s.label])].map(([k,l])=>`<button data-st="${k}" aria-pressed="${cur===k}"><i class="sw" style="background:${k==="auto"?`linear-gradient(90deg, ${STYLES.papier.land} 0 50%, ${STYLES.nuit.land} 50%)`:sw(k)}"></i><span>${l}</span></button>`).join("")}</div></div>
+  <div class="field"><label>Couleur des GR parcourus</label><div class="swatches" id="swDone">${DONE_SWATCHES.map(c=>`<button style="background:${c}" data-c="${c}" aria-pressed="${prefs.done===c}" aria-label="${c}"></button>`).join("")}<input type="color" id="cDone" value="${prefs.done}" aria-label="Autre couleur"></div></div>
+  <div class="field"><label>Couleur des nouvelles traces GPX</label><div class="swatches" id="swTr">${DONE_SWATCHES.map(c=>`<button style="background:${c}" data-c="${c}" aria-pressed="${prefs.track===c}" aria-label="${c}"></button>`).join("")}<input type="color" id="cTr" value="${prefs.track}" aria-label="Autre couleur"></div></div>
+  <label class="opt">Épaisseur des tracés <input type="range" id="oW" min="1.5" max="6" step="0.5" value="${prefs.width}"></label>
+  <label class="opt">Intensité du relief <input type="range" id="oR" min="0" max="1.4" step="0.05" value="${prefs.relief}"></label>
+  <label class="opt">Afficher les GR à faire <input type="checkbox" id="oT" ${prefs.showTodo?"checked":""}></label>
+  <label class="opt">Limites des départements <input type="checkbox" id="oD" ${prefs.showDeps?"checked":""}></label>
+  <label class="opt">Noms des villes et massifs <input type="checkbox" id="oL" ${prefs.showLabels?"checked":""}></label>
+  <button class="btn" id="oReset">Revenir aux réglages d'origine</button>`;
+  const set=(patch,relief)=>{ prefs={...prefs,...patch}; Store.savePrefs(); if(relief) drawRelief(); applyStyle(); renderCustom(); renderList(); };
+  p.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>set({style:b.dataset.st}));
+  $("#swDone").onclick=e=>{ const b=e.target.closest("[data-c]"); if(b) set({done:b.dataset.c}); };
+  $("#cDone").onchange=e=>set({done:e.target.value});
+  $("#swTr").onclick=e=>{ const b=e.target.closest("[data-c]"); if(b) set({track:b.dataset.c}); };
+  $("#cTr").onchange=e=>set({track:e.target.value});
+  $("#oW").oninput=e=>{ prefs.width=+e.target.value; styleAllGr(); for(const id in trLayers) styleTrack(id); }; $("#oW").onchange=()=>Store.savePrefs();
+  let rt; $("#oR").oninput=e=>{ prefs.relief=+e.target.value; clearTimeout(rt); rt=setTimeout(drawRelief,120); }; $("#oR").onchange=()=>Store.savePrefs();
+  $("#oT").onchange=e=>set({showTodo:e.target.checked}); $("#oD").onchange=e=>set({showDeps:e.target.checked}); $("#oL").onchange=e=>set({showLabels:e.target.checked});
+  $("#oReset").onclick=()=>set({...DEFAULT_PREFS});
+}
+
+/* ===================== Divers ===================== */
+$("#zin").onclick=()=>map.zoomIn(); $("#zout").onclick=()=>map.zoomOut(); $("#zfr").onclick=()=>map.flyToBounds(FR_BOUNDS,{padding:[10,10],duration:.6});
+map.on("click",e=>{ if(!$("#custom").hidden) toggleCustom(false); });
+function renderAll(){ stats(); styleAllGr(); renderList(); if(selected) renderDetailSoft(); }
+let softT; function renderDetailSoft(){ // évite de reconstruire la fiche pendant la saisie
+  const a=document.activeElement; if(a && $("#detail").contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return; clearTimeout(softT); softT=setTimeout(renderDetail,50); }
+
+applyStyle(); renderAll(); loadDem(); Store.init();
+if("serviceWorker" in navigator && (location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1")) addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+if(location.hash && location.hash.length>1){ const k=decodeURIComponent(location.hash.slice(1)).replace(/-/g," ").toUpperCase(); if(GRBY[k]) setTimeout(()=>select("gr",k,true),300); }
+</script>
+</body>
+</html>

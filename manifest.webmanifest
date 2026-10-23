@@ -1,0 +1,16 @@
+{
+  "name": "Carnet des GR",
+  "short_name": "Carnet GR",
+  "description": "Mes sentiers de grande randonnée : carte des GR de France, portions parcourues, traces GPX et photos.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eceee8",
+  "theme_color": "#1d2a23",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
