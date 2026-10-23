@@ -273,6 +273,25 @@ button.store:hover{background:var(--soft)}
 .sum{display:flex;gap:14px;font-size:.85rem;color:var(--muted)}
 .sum b{color:var(--ink);font-family:var(--mono);font-weight:500}
 .warn{color:var(--warn)}
+/* Accueil */
+.help{flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:800;font-size:.85rem;display:grid;place-items:center;margin-left:auto}
+.help:hover{background:var(--soft);color:var(--ink)}
+.brand .help + .store{margin-left:0}
+.welcome{width:min(560px,100%);gap:12px}
+.w-top{display:flex;align-items:center;gap:12px}
+.w-top .blaze{width:34px;height:24px}
+.welcome h3{font-size:1.55rem;margin:0}
+.welcome h4{font-family:var(--display);font-size:1.15rem;margin:6px 0 0}
+.how{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:6px}
+.choices{display:flex;flex-direction:column;gap:8px}
+.choice{display:flex;flex-direction:column;gap:2px;text-align:left;border:1.5px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 14px;color:var(--ink)}
+.choice b{font-size:1rem}
+.choice span{font-size:.84rem;color:var(--muted);line-height:1.35}
+.choice:hover:not(:disabled){border-color:var(--ink)}
+.choice.on{border-color:var(--done);box-shadow:inset 4px 0 0 var(--done)}
+.choice:disabled{opacity:.55;cursor:not-allowed}
+.choice:first-child:not(:disabled):not(.on){border-color:color-mix(in srgb,var(--ink) 45%,var(--line))}
+button.store{white-space:nowrap;max-width:none}
 </style>
 </head>
 <body>
@@ -281,7 +300,7 @@ button.store:hover{background:var(--soft)}
     <header class="brand">
       <span class="blaze" aria-hidden="true"><i></i><i></i></span>
       <div><h1>Carnet des GR</h1><div class="sub">Mes sentiers de grande randonnée</div></div>
-      <button class="store" id="store" type="button" aria-label="Sauvegarde et synchronisation"><b>Chargement…</b></button>
+      <button class="help" id="helpBtn" type="button" aria-label="Comment ça marche" title="Comment ça marche">?</button><button class="store" id="store" type="button" aria-label="Sauvegarde et synchronisation"><b>Chargement…</b></button>
     </header>
     <section class="stats" aria-label="Bilan">
       <div class="stat"><div class="v" id="sGr">0 / 0</div><div class="l" id="sGrL">GR parcourus</div></div>
@@ -324,6 +343,7 @@ button.store:hover{background:var(--soft)}
 </div>
 <div class="lightbox" id="lightbox" hidden></div>
 <div class="sheet" id="sync" hidden></div>
+<div class="sheet" id="welcome" hidden></div>
 <input type="file" id="gpxInput" accept=".gpx,application/gpx+xml" multiple hidden>
 <input type="file" id="photoInput" accept="image/*" multiple hidden>
 <div class="toast" id="toast" hidden></div>
@@ -406,6 +426,7 @@ const Store = {
     if(this.driveOn()){ state.mode="drive"; this.loadGis().catch(()=>{}); }
     this.pending=Object.keys(await this.idbAll("pending")).length;
     renderStoreBadge(); this.sync();
+    if(!welcomeSeen()&&!this.driveOn()) openWelcome(true);
     setInterval(()=>{ if(document.visibilityState==="visible") this.sync(); }, 45000);
     document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") this.sync(); });
     addEventListener("online",()=>this.sync());
@@ -864,7 +885,7 @@ async function renderLightbox(){
   const cap=$("#lbCap"); if(cap&&!ro) cap.onchange=async()=>{ const list=lb.photos.map((x,k)=>k===lb.i?{...x,cap:cap.value}:x); lb.photos=list; if(photoTarget) photoTarget.photos=list; await lb.commit(list); };
   const del=$("#lbDel"); if(del) del.onclick=()=>{ $("#lbDelZ").innerHTML=`<button class="btn" id="lbYes">Confirmer la suppression</button> <button class="btn" id="lbNo">Annuler</button>`; $("#lbNo").onclick=renderLightbox; $("#lbYes").onclick=async()=>{ const x=lb.photos[lb.i]; const list=lb.photos.filter((_,k)=>k!==lb.i); await Store.delBlob(x.id); await Store.delBlob(x.t); await Store.delBlob(x.o); lb.photos=list; if(photoTarget) photoTarget.photos=list; await lb.commit(list); lb.i=Math.min(lb.i,list.length-1); if(!list.length){ lb=null; $("#lightbox").hidden=true; } else renderLightbox(); renderDetail(); }; };
 }
-document.addEventListener("keydown",e=>{ if(!lb) { if(e.key==="Escape"&&!$("#sync").hidden){ openSync(false); return; } if(e.key==="Escape"&&!$("#custom").hidden) toggleCustom(false); return; } if(e.target.tagName==="INPUT") return; if(e.key==="Escape"){ lb=null; $("#lightbox").hidden=true; } if(e.key==="ArrowLeft") $("#lbP")?.click(); if(e.key==="ArrowRight") $("#lbN")?.click(); });
+document.addEventListener("keydown",e=>{ if(!lb) { if(e.key==="Escape"&&!$("#sync").hidden){ openSync(false); return; } if(e.key==="Escape"&&!$("#welcome").hidden&&welcomeSeen()){ openWelcome(false); return; } if(e.key==="Escape"&&!$("#custom").hidden) toggleCustom(false); return; } if(e.target.tagName==="INPUT") return; if(e.key==="Escape"){ lb=null; $("#lightbox").hidden=true; } if(e.key==="ArrowLeft") $("#lbP")?.click(); if(e.key==="ArrowRight") $("#lbN")?.click(); });
 
 /* ===================== Import GPX ===================== */
 function parseGpx(text){
@@ -1031,6 +1052,40 @@ function renderSyncPanel(){
   $("#sImpF").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; try{ await Store.importFile(f); toast("Sauvegarde importée et fusionnée"); renderSyncPanel(); }catch(err){ toast(err.message||"Import impossible"); } };
 }
 $("#sync").addEventListener("click",e=>{ if(e.target.id==="sync") openSync(false); });
+
+/* ===================== Accueil : explication + choix du stockage ===================== */
+function welcomeSeen(){ try{ return !!localStorage.getItem("carnet-welcome"); }catch(e){ return true; } }
+function setWelcome(v){ try{ localStorage.setItem("carnet-welcome",v); }catch(e){} }
+function openWelcome(v){ const p=$("#welcome"); p.hidden=!v; if(v){ renderWelcome(); Store.loadGis().catch(()=>{}); } }
+function renderWelcome(){
+  const p=$("#welcome"); if(p.hidden) return; const cid=!!Store.clientId(); const on=state.mode==="drive"; const first=!welcomeSeen();
+  p.innerHTML=`<div class="sheet-card welcome" role="dialog" aria-modal="true" aria-labelledby="wH">
+    ${first?"":`<button class="close" id="wX" aria-label="Fermer">×</button>`}
+    <div class="w-top"><span class="blaze" aria-hidden="true"><i></i><i></i></span><h3 id="wH">${first?"Bienvenue dans le Carnet des GR":"Comment ça marche"}</h3></div>
+    <p>Une carte des 209 sentiers de grande randonnée de France pour garder la trace de tes randonnées, avec la distance et le dénivelé de chaque GR.</p>
+    <ol class="how">
+      <li><b>Coche les GR que tu as parcourus.</b> Pour un GR fait en partie, choisis « En partie » dans sa fiche et règle les curseurs sur la portion faite.</li>
+      <li><b>Importe tes traces GPX</b> (montre, téléphone, Visorando…). Elles s'affichent sur la carte et l'appli reconnaît le GR suivi.</li>
+      <li><b>Ajoute tes photos</b> à chaque GR ou trace. Tes kilomètres et ton dénivelé se calculent tout seuls.</li>
+    </ol>
+    <h4>${first?"Où ranger ton carnet et tes photos ?":"Stockage"}</h4>
+    <div class="choices">
+      <button class="choice${on?" on":""}" id="wDrive" ${cid?"":"disabled"}><b>Mon Google Drive${on?" · connecté":""}</b><span>${cid?"Recommandé. Ton carnet te suit sur ton téléphone et ton ordinateur, et tes photos originales sont rangées dans un dossier par GR. Personne d'autre n'y a accès.":"Pas encore disponible sur ce site : son créateur doit d'abord le configurer."}</span></button>
+      <button class="choice${!on&&!first?" on":""}" id="wLocal"><b>Seulement sur cet appareil</b><span>Sans compte. Tout reste dans ce navigateur : pense à exporter une sauvegarde de temps en temps (bouton en haut du carnet).</span></button>
+      <button class="choice" id="wImp"><b>J'ai déjà une sauvegarde</b><span>Reprendre un fichier exporté depuis le Carnet des GR.</span></button>
+    </div>
+    <input type="file" id="wImpF" accept=".json,application/json" hidden>
+    ${cid?`<p class="note">Avec Google Drive, l'appli ne voit que les fichiers qu'elle crée elle-même, dans le dossier « Carnet des GR ». Si Google affiche « Cette application n'a pas été validée », clique sur « Paramètres avancés » puis sur « Accéder à Carnet des GR ».</p>`:""}
+    <p class="note">Tu pourras changer d'avis à tout moment avec le bouton en haut du carnet. Ce bouton « ? » réaffiche cette explication.</p>
+  </div>`;
+  $("#wX")&&($("#wX").onclick=()=>openWelcome(false));
+  $("#wDrive").onclick=async()=>{ if(on){ setWelcome("drive"); openWelcome(false); return; } try{ await Store.connect(true); setWelcome("drive"); openWelcome(false); toast("Google Drive connecté : ton carnet y sera enregistré."); renderStoreBadge(); await Store.sync(true); }catch(e){ toast(e.message); } };
+  $("#wLocal").onclick=()=>{ setWelcome("local"); if(on) openSync(true); openWelcome(false); if(!on) toast("D'accord : ton carnet reste sur cet appareil."); };
+  $("#wImp").onclick=()=>$("#wImpF").click();
+  $("#wImpF").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; try{ await Store.importFile(f); setWelcome(state.mode==="drive"?"drive":"local"); toast("Sauvegarde importée"); renderWelcome(); }catch(err){ toast(err.message||"Import impossible"); } };
+}
+$("#helpBtn").onclick=()=>openWelcome(true);
+$("#welcome").addEventListener("click",e=>{ if(e.target.id==="welcome"&&welcomeSeen()) openWelcome(false); });
 
 /* ===================== Personnalisation ===================== */
 function toggleCustom(v){ const p=$("#custom"); const show = v ?? p.hidden; p.hidden=!show; $("#customBtn").setAttribute("aria-expanded",String(show)); if(show) renderCustom(); }
