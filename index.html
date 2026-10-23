@@ -422,6 +422,7 @@ const Store = {
     this.remote=(await this.idbGet("kv","remote"))||{}; this.lastSync=this.remote.at||0; this.dirty=!!(await this.idbGet("kv","dirty"));
     if(doc.prefs) prefs={...DEFAULT_PREFS,...doc.prefs};
     this.derive(); applyStyle(); syncTrackLayers(); renderAll();
+    try{ this.who=localStorage.getItem("carnet-who")||""; }catch(e){}
     try{ const tk=JSON.parse(localStorage.getItem("carnet-token")||"null"); if(tk&&tk.e>Date.now()){ this.token=tk.t; this.tokenExp=tk.e; } }catch(e){}
     if(this.driveOn()){ state.mode="drive"; this.loadGis().catch(()=>{}); }
     this.pending=Object.keys(await this.idbAll("pending")).length;
@@ -476,7 +477,7 @@ const Store = {
         error_callback:e=>rej(new Error(e?.type==="popup_closed"?"Fenêtre Google fermée.":e?.type==="popup_failed_to_open"?"La fenêtre Google a été bloquée : autorise les fenêtres pour ce site.":"Connexion annulée.")) });
       tc.requestAccessToken({ prompt: pick ? "select_account consent" : "" });
     }); },
-  disconnect(){ try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
+  disconnect(){ this.who=""; try{ localStorage.removeItem("carnet-who"); }catch(e){} try{ if(this.token&&window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(this.token,()=>{}); localStorage.removeItem("carnet-token"); localStorage.setItem("carnet-drive","0"); }catch(e){} this.token=null; this.tokenExp=0; this.folder=null; this.sub={}; state.mode="local"; renderStoreBadge(); },
   async api(method,url,body,headers){ const r=await fetch(url,{method,body,headers:{Authorization:"Bearer "+this.token,...(headers||{})}});
     if(!r.ok){ const e=new Error(r.status===401?"Session Google expirée":r.status===403?"Accès refusé par Google ("+r.status+")":"Erreur Google Drive ("+r.status+")"); e.status=r.status; if(r.status===401){ this.token=null; this.tokenExp=0; } throw e; } return r; },
   async list(q){ const r=await this.api("GET",`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,version,modifiedTime)&spaces=drive&pageSize=20&orderBy=createdTime`); return (await r.json()).files||[]; },
@@ -504,6 +505,7 @@ const Store = {
     this.syncing=true; renderStoreBadge();
     try{
       await this.folders();
+      if(!this.who){ try{ const r=await this.api("GET","https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)"); const u=(await r.json()).user||{}; this.who=u.emailAddress||u.displayName||""; try{ localStorage.setItem("carnet-who",this.who); }catch(e){} }catch(e){ if(e.status===401) throw e; } }
       // 1. photos et GPX en attente d'envoi
       const pend=await this.idbAll("pending");
       for(const [id,p] of Object.entries(pend)){ const blob=await this.idbGet("blobs",id);
@@ -1019,18 +1021,18 @@ function renderSyncPanel(){
   const nGr=Object.values(doc.grs).filter(r=>r.status&&r.status!=="todo").length, nTr=Object.keys(state.tracks).length, nPh=Object.values(doc.files).filter(v=>v!=="x").length;
   let status;
   if(!on) status=`<p><b>Tes données sont enregistrées uniquement dans ce navigateur.</b> Connecte un Google Drive pour les retrouver sur ton téléphone et ton ordinateur, et pour ne rien perdre si tu changes d'appareil.</p>`;
-  else if(!S_.hasToken()) status=`<p><b>Google Drive est relié, mais la session a expiré.</b> Tes modifications restent enregistrées ici et partiront dès que tu te reconnectes.</p>`;
-  else status=`<p><b>Synchronisé avec Google Drive</b>, dossier « Carnet des GR ».${S_.lastSync?` Dernière synchro à ${new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.`:""}</p>`;
+  else if(!S_.hasToken()) status=`<p><b>Google Drive${S_.who?` (${esc(S_.who)})`:""} est relié, mais la session a expiré.</b> Tes modifications restent enregistrées ici et partiront dès que tu te reconnectes.</p>`;
+  else status=`<p><b>Synchronisé avec Google Drive</b>${S_.who?` de <b>${esc(S_.who)}</b>`:""}, dossier « Carnet des GR ».${S_.lastSync?` Dernière synchro à ${new Date(S_.lastSync).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.`:""}</p>`;
   const waiting = S_.pending ? `<p class="note">${S_.pending} fichier${S_.pending>1?"s":""} en attente d'envoi.</p>` : "";
   const err = S_.err && S_.err!=="auth" ? `<p class="note warn">Dernière erreur : ${esc(S_.err)}</p>` : "";
   p.innerHTML=`<div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="syncH">
     <button class="close" id="syncX" aria-label="Fermer">×</button>
     <h3 id="syncH">Sauvegarde & synchronisation</h3>
     <div class="sum"><span><b>${nGr}</b> GR</span><span><b>${nTr}</b> trace${nTr>1?"s":""}</span><span><b>${nPh}</b> fichier${nPh>1?"s":""}</span></div>
-    ${status}${waiting}${err}
+    ${status}${on?`<p class="note">Pour retrouver le même carnet sur un autre appareil, connecte-y le même compte Google.</p>`:""}${waiting}${err}
     <div class="row-btns">
       ${!cid?"":!on?`<button class="btn primary" id="sConnect">Connecter Google Drive</button>`:!S_.hasToken()?`<button class="btn primary" id="sRe">Se reconnecter</button>`:`<button class="btn primary" id="sNow" ${S_.syncing?"disabled":""}>${S_.syncing?"Synchro en cours…":"Synchroniser maintenant"}</button>`}
-      ${on?`<button class="btn" id="sOff">Déconnecter cet appareil</button>`:""}
+      ${on?`<button class="btn" id="sOff">Changer de compte / déconnecter</button>`:""}
     </div>
     ${cid?"":`<div class="field"><label for="sCid">Identifiant client Google</label><input id="sCid" placeholder="123456-abc.apps.googleusercontent.com" autocomplete="off"><div class="note" style="margin-top:4px">À créer une seule fois dans la console Google (voir le guide d'installation). Tu peux aussi l'écrire dans le fichier config.js pour ne pas le saisir sur chaque appareil.</div></div><button class="btn" id="sCidOk">Enregistrer l'identifiant</button>`}
     <hr>
@@ -1070,7 +1072,7 @@ function renderWelcome(){
     </ol>
     <h4>${first?"Où ranger ton carnet et tes photos ?":"Stockage"}</h4>
     <div class="choices">
-      <button class="choice${on?" on":""}" id="wDrive" ${cid?"":"disabled"}><b>Mon Google Drive${on?" · connecté":""}</b><span>${cid?"Recommandé. Ton carnet te suit sur ton téléphone et ton ordinateur, et tes photos originales sont rangées dans un dossier par GR. Personne d'autre n'y a accès.":"Pas encore disponible sur ce site : son créateur doit d'abord le configurer."}</span></button>
+      <button class="choice${on?" on":""}" id="wDrive" ${cid?"":"disabled"}><b>Mon Google Drive${on?" · connecté"+(Store.who?" ("+esc(Store.who)+")":""):""}</b><span>${cid?"Recommandé. Ton carnet te suit sur ton téléphone et ton ordinateur, et tes photos originales sont rangées dans un dossier par GR. Personne d'autre n'y a accès.":"Pas encore disponible sur ce site : son créateur doit d'abord le configurer."}</span></button>
       <button class="choice${!on&&!first?" on":""}" id="wLocal"><b>Seulement sur cet appareil</b><span>Sans compte. Tout reste dans ce navigateur : pense à exporter une sauvegarde de temps en temps (bouton en haut du carnet).</span></button>
       <button class="choice" id="wImp"><b>J'ai déjà une sauvegarde</b><span>Reprendre un fichier exporté depuis le Carnet des GR.</span></button>
     </div>
